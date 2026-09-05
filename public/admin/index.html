@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hotel CRM</title>
+  <link rel="stylesheet" href="/admin/css/style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <h2>Hotel CRM</h2>
+        <span id="hotelName">XYZ Hotel</span>
+      </div>
+      <nav>
+        <div class="nav-section">Overview</div>
+        <a class="nav-item active" data-page="dashboard"><span class="nav-ico">▣</span> Dashboard</a>
+
+        <div class="nav-section">Guests</div>
+        <a class="nav-item" data-page="guests"><span class="nav-ico">◎</span> Guests</a>
+        <a class="nav-item" data-page="bookings"><span class="nav-ico">☰</span> Bookings</a>
+        <a class="nav-item" data-page="rooms"><span class="nav-ico">▢</span> Rooms</a>
+        <a class="nav-item" data-page="conversations"><span class="nav-ico">💬</span> Conversations</a>
+
+        <div class="nav-section">Operations</div>
+        <a class="nav-item" data-page="orders"><span class="nav-ico">🍽</span> Food Orders</a>
+        <a class="nav-item" data-page="requests"><span class="nav-ico">⚑</span> Service Requests</a>
+
+        <div class="nav-section">Setup</div>
+        <a class="nav-item" data-page="menu"><span class="nav-ico">✦</span> Menu</a>
+        <a class="nav-item" data-page="faq"><span class="nav-ico">?</span> FAQ</a>
+      </nav>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <h1 id="pageTitle">Dashboard</h1>
+        <div class="topbar-actions">
+          <span class="admin-chip"><span class="dot"></span><span id="adminName"></span></span>
+          <button class="btn btn-sm btn-ghost" id="logoutBtn">Logout</button>
+          <button class="btn btn-sm btn-primary" id="refreshBtn">Refresh</button>
+        </div>
+      </header>
+      <div class="content" id="content"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="modal">
+    <div class="modal" id="modalBody"></div>
+  </div>
+
+  <script src="/admin/js/app.js"></script>
+</body>
+</html>

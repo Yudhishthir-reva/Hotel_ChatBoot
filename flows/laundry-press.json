@@ -1,0 +1,71 @@
+{
+  "version": "6.0",
+  "data_api_version": "3.0",
+  "routing_model": {
+    "LAUNDRY": []
+  },
+  "screens": [
+    {
+      "id": "LAUNDRY",
+      "title": "Laundry / Press",
+      "terminal": true,
+      "success": true,
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Clothes Press"
+          },
+          {
+            "type": "TextBody",
+            "text": "Select one or more items. Pickup in ~10 minutes from your room."
+          },
+          {
+            "type": "Form",
+            "name": "laundry_form",
+            "children": [
+              {
+                "type": "CheckboxGroup",
+                "name": "items",
+                "label": "What do you want pressed?",
+                "required": true,
+                "min-selected-items": 1,
+                "max-selected-items": 5,
+                "data-source": [
+                  {
+                    "id": "shirt",
+                    "title": "Shirt Press",
+                    "description": "₹50 per piece"
+                  },
+                  {
+                    "id": "pant",
+                    "title": "Pant Press",
+                    "description": "₹70 per piece"
+                  },
+                  {
+                    "id": "suit",
+                    "title": "Suit Press",
+                    "description": "₹150 per piece"
+                  }
+                ]
+              },
+              {
+                "type": "Footer",
+                "label": "Place Request",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "items": "${form.items}",
+                    "flow_name": "laundry_press"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

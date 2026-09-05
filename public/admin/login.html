@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — Hotel CRM</title>
+  <link rel="stylesheet" href="/admin/css/style.css">
+</head>
+<body>
+  <div class="login-page">
+    <div class="login-card">
+      <h1>🏨 Hotel CRM</h1>
+      <p>Sign in to manage guests, orders & requests</p>
+      <form id="loginForm">
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="email" value="admin@xyzhotel.com" required>
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="password" value="admin123" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Sign In</button>
+        <p class="error-msg hidden" id="errorMsg"></p>
+      </form>
+    </div>
+  </div>
+  <script>
+    if (localStorage.getItem('token')) {
+      window.location.href = '/admin/index.html';
+    }
+
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById('errorMsg');
+      errorEl.classList.add('hidden');
+
+      try {
+        const res = await fetch('/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: document.getElementById('email').value,
+            password: document.getElementById('password').value,
+          }),
+        });
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          throw new Error('Server error — is MySQL running? Run: mysql -u root < database/schema.sql');
+        }
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        localStorage.setItem('token', data.data.token);
+        localStorage.setItem('admin', JSON.stringify(data.data.admin));
+        window.location.href = '/admin/index.html';
+      } catch (err) {
+        errorEl.textContent = err.message || 'Login failed';
+        errorEl.classList.remove('hidden');
+      }
+    });
+  </script>
+</body>
+</html>

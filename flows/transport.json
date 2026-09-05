@@ -1,0 +1,58 @@
+{
+  "version": "6.0",
+  "data_api_version": "3.0",
+  "routing_model": { "TRANSPORT": [] },
+  "screens": [
+    {
+      "id": "TRANSPORT",
+      "title": "Transport / Cab",
+      "terminal": true,
+      "success": true,
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          { "type": "TextHeading", "text": "Book a Cab" },
+          { "type": "TextBody", "text": "Select destination. Reception will confirm." },
+          {
+            "type": "Form",
+            "name": "cab_form",
+            "children": [
+              {
+                "type": "RadioButtonsGroup",
+                "name": "destination",
+                "label": "Where do you want to go?",
+                "required": true,
+                "data-source": [
+                  { "id": "airport", "title": "Airport Transfer" },
+                  { "id": "station", "title": "Railway Station" },
+                  { "id": "local", "title": "Local Cab" },
+                  { "id": "other", "title": "Other Location" }
+                ]
+              },
+              {
+                "type": "TextArea",
+                "name": "notes",
+                "label": "Notes (optional)",
+                "required": false,
+                "helper-text": "Time, landmark, etc."
+              },
+              {
+                "type": "Footer",
+                "label": "Request Cab",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "destination": "${form.destination}",
+                    "notes": "${form.notes}",
+                    "flow_name": "transport"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

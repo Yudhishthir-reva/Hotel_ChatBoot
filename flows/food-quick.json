@@ -1,0 +1,68 @@
+{
+  "version": "6.0",
+  "data_api_version": "3.0",
+  "routing_model": { "FOOD": [] },
+  "screens": [
+    {
+      "id": "FOOD",
+      "title": "Food / Dining",
+      "terminal": true,
+      "success": true,
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          { "type": "TextHeading", "text": "Quick Order" },
+          { "type": "TextBody", "text": "Select items (checkboxes). Full menu also available in chat." },
+          {
+            "type": "Form",
+            "name": "food_form",
+            "children": [
+              {
+                "type": "CheckboxGroup",
+                "name": "items",
+                "label": "Popular items",
+                "required": true,
+                "min-selected-items": 1,
+                "max-selected-items": 8,
+                "data-source": [
+                  { "id": "chicken_biryani", "title": "Chicken Biryani", "description": "₹350" },
+                  { "id": "butter_chicken", "title": "Butter Chicken", "description": "₹420" },
+                  { "id": "dal_makhani", "title": "Dal Makhani", "description": "₹250" },
+                  { "id": "paneer_tikka", "title": "Paneer Tikka", "description": "₹300" },
+                  { "id": "masala_chai", "title": "Masala Chai", "description": "₹60" },
+                  { "id": "cold_coffee", "title": "Cold Coffee", "description": "₹120" },
+                  { "id": "gulab_jamun", "title": "Gulab Jamun", "description": "₹150" },
+                  { "id": "french_fries", "title": "French Fries", "description": "₹180" }
+                ]
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "quantity_each",
+                "label": "Quantity for each selected item",
+                "required": true,
+                "data-source": [
+                  { "id": "1", "title": "1 each" },
+                  { "id": "2", "title": "2 each" },
+                  { "id": "3", "title": "3 each" }
+                ]
+              },
+              {
+                "type": "Footer",
+                "label": "Place Order",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "items": "${form.items}",
+                    "quantity_each": "${form.quantity_each}",
+                    "flow_name": "food"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

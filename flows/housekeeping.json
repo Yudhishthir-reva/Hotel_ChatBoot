@@ -1,0 +1,54 @@
+{
+  "version": "6.0",
+  "data_api_version": "3.0",
+  "routing_model": { "HOUSEKEEPING": [] },
+  "screens": [
+    {
+      "id": "HOUSEKEEPING",
+      "title": "Housekeeping",
+      "terminal": true,
+      "success": true,
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          { "type": "TextHeading", "text": "Housekeeping" },
+          { "type": "TextBody", "text": "Select what you need. Staff will come to your room." },
+          {
+            "type": "Form",
+            "name": "hk_form",
+            "children": [
+              {
+                "type": "CheckboxGroup",
+                "name": "items",
+                "label": "Select requests",
+                "required": true,
+                "min-selected-items": 1,
+                "max-selected-items": 6,
+                "data-source": [
+                  { "id": "room_cleaning", "title": "Room Cleaning" },
+                  { "id": "extra_towel", "title": "Extra Towel" },
+                  { "id": "toiletries", "title": "Toiletries" },
+                  { "id": "water", "title": "Drinking Water" },
+                  { "id": "bed_make", "title": "Make Bed" },
+                  { "id": "other", "title": "Other" }
+                ]
+              },
+              {
+                "type": "Footer",
+                "label": "Submit Request",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "items": "${form.items}",
+                    "flow_name": "housekeeping"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

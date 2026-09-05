@@ -1,0 +1,50 @@
+[
+  {
+    "name": "hotel_welcome",
+    "category": "UTILITY",
+    "language": "en",
+    "body": "Hello {{1}}, welcome to {{2}}. Your room is {{3}}. Reply here for food, laundry, or hotel services.",
+    "footer": "In-room assistance",
+    "example": ["Rahul", "XYZ Hotel", "210"]
+  },
+  {
+    "name": "food_order_confirmed",
+    "category": "UTILITY",
+    "language": "en",
+    "body": "Your food order {{1}} for room {{2}} has been received. Total: INR {{3}}. Estimated delivery: {{4}} minutes. We will send status updates here.",
+    "footer": "Hotel dining",
+    "example": ["ORD1025", "210", "180", "30"]
+  },
+  {
+    "name": "food_order_status",
+    "category": "UTILITY",
+    "language": "en",
+    "body": "Update for food order {{1}}, room {{2}}: {{3}}",
+    "footer": "Hotel dining",
+    "example": ["ORD1025", "210", "Your order is being prepared."]
+  },
+  {
+    "name": "service_request_created",
+    "category": "UTILITY",
+    "language": "en",
+    "body": "Your {{1}} request {{2}} for room {{3}} has been created. Details: {{4}}. We will update you here.",
+    "footer": "Hotel services",
+    "example": ["Laundry", "HK-1025", "210", "Shirt Press x1, Pant Press x1"]
+  },
+  {
+    "name": "service_request_status",
+    "category": "UTILITY",
+    "language": "en",
+    "body": "Update for request {{1}}: {{2}}",
+    "footer": "Hotel services",
+    "example": ["HK-1025", "Your request has been completed."]
+  },
+  {
+    "name": "guest_not_checked_in",
+    "category": "UTILITY",
+    "language": "en",
+    "body": "We could not find an active stay on this WhatsApp number. Hotel services will be available after check-in.",
+    "footer": "Front desk",
+    "example": []
+  }
+]

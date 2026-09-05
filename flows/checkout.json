@@ -1,0 +1,56 @@
+{
+  "version": "6.0",
+  "data_api_version": "3.0",
+  "routing_model": { "CHECKOUT": [] },
+  "screens": [
+    {
+      "id": "CHECKOUT",
+      "title": "Checkout",
+      "terminal": true,
+      "success": true,
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          { "type": "TextHeading", "text": "Checkout Request" },
+          { "type": "TextBody", "text": "Front desk will process your request." },
+          {
+            "type": "Form",
+            "name": "co_form",
+            "children": [
+              {
+                "type": "RadioButtonsGroup",
+                "name": "checkout_type",
+                "label": "Checkout type",
+                "required": true,
+                "data-source": [
+                  { "id": "normal", "title": "Standard checkout" },
+                  { "id": "late", "title": "Late checkout (approval needed)" }
+                ]
+              },
+              {
+                "type": "TextInput",
+                "name": "preferred_time",
+                "label": "Preferred time (optional)",
+                "required": false,
+                "helper-text": "e.g. 2 PM"
+              },
+              {
+                "type": "Footer",
+                "label": "Submit",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "checkout_type": "${form.checkout_type}",
+                    "preferred_time": "${form.preferred_time}",
+                    "flow_name": "checkout"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
