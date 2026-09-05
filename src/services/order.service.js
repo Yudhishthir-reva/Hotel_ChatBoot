@@ -28,11 +28,12 @@ async function updateStatus(orderId, status) {
 }
 
 const STATUS_MESSAGES = {
-  accepted: '✅ Order received by kitchen.\nWe have started processing your order.',
+  accepted: '✅ Aapka order confirm ho chuka hai (kitchen/admin).\nAb order edit ya cancel nahi ho sakta.',
   preparing: '👨‍🍳 Order is being prepared.\nYour food will be ready soon.',
   out_for_delivery: '🚪 Your order is on the way!\nStaff is coming to your room.',
   delivered: '🍽️ Enjoy your meal!\nThank you for ordering with us.',
   rejected: '❌ Sorry, your order could not be fulfilled.\nPlease contact the front desk.',
+  cancelled: '❌ Order cancel kar diya gaya hai.',
 };
 
 function getStatusMessage(status) {

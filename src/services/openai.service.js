@@ -13,7 +13,7 @@ function getClient() {
 const SYSTEM_PROMPT = `You are an intent classifier for a hotel WhatsApp guest assistant.
 Analyze the guest message and return ONLY valid JSON:
 {
-  "intent": "food|laundry|transport|facilities|reception|valet|housekeeping|maintenance|checkout|late_checkout|faq|order_status|order_locked|request_status|services|greeting|off_topic|unknown",
+  "intent": "food|laundry|transport|facilities|reception|valet|housekeeping|maintenance|checkout|late_checkout|faq|order_status|order_cancel|order_edit|request_status|services|greeting|off_topic|unknown",
   "issue": "short issue description if maintenance/housekeeping, else null",
   "priority": "low|medium|high",
   "faq_keyword": "keyword to search FAQ if intent is faq/facilities, else null",
@@ -24,7 +24,8 @@ Rules:
 - Specific food/drink order in text ("2 cup chai bhej do", "ek biryani", "cold coffee 2", "paneer tikka bhej do") → food (guest may skip menu)
 - Want to browse menu / "menu dikhao" / "khana order karna" without naming items → food
 - Asking STATUS of an existing food order ("mera order", "order status", "khana kab aayega", "mene order kiya tha") → order_status
-- Want to CANCEL or EDIT an already placed food order ("order cancel", "order edit", "order badlo") → order_locked
+- Want to CANCEL food order ("order cancel", "order cancel kar do", "mera order cancel") → order_cancel
+- Want to EDIT/change food order ("order edit", "order badlo", "order change") → order_edit
 - Asking STATUS of laundry/valet/HK/maintenance/request ("mera request", "laundry status", "kab hoga") → request_status
 - "laundry", "press", "iron", "kapde" (to place new) → laundry
 - "cab", "taxi", "transport", "airport" → transport
@@ -76,8 +77,11 @@ function fallbackIntent(message) {
     return { intent: 'request_status', language: 'mixed' };
   }
 
-  if (/order.*(cancel|edit|badlo|change|modify)|cancel.*order|edit.*order|order cancel|order edit/i.test(lower)) {
-    return { intent: 'order_locked', language: 'mixed' };
+  if (/order.*(edit|badlo|change|modify)|edit.*order|order edit|order change/i.test(lower)) {
+    return { intent: 'order_edit', language: 'mixed' };
+  }
+  if (/order.*(cancel|hatao|mat bhejo)|cancel.*order|order cancel/i.test(lower)) {
+    return { intent: 'order_cancel', language: 'mixed' };
   }
 
   if (/chai|tea|coffee|biryani|paneer|pizza|fries|sandwich|gulab|ice cream|bhej do|bhej dena|cup |plates?|order kar|khana |pani ki|paani ki|water bottle|bottel/i.test(lower)) {

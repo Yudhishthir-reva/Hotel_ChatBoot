@@ -254,6 +254,8 @@ async function handleInteractive(phone, interactive, booking, session, sessionDa
   if (id === 'cart_place') return askOrderConfirm(phone, booking, sessionData.cart || []);
   if (id === 'cart_confirm' || id === 'order_yes') return confirmOrder(phone, booking, sessionData);
   if (id === 'order_no' || id === 'cart_cancel') return cancelCart(phone, booking);
+  if (id === 'guest_order_cancel') return handleGuestOrderCancel(phone, booking);
+  if (id === 'guest_order_edit') return handleGuestOrderEdit(phone, booking);
 
   // Laundry
   if (id === 'laundry_combo_shirt_pant') {
@@ -333,12 +335,10 @@ async function handleFreeText(phone, text, booking) {
       return sendServicesEntry(phone, booking);
     case 'order_status':
       return replyOrderStatus(phone, booking, text, lang);
-    case 'order_locked':
-      return whatsapp.sendText(
-        phone,
-        '❌ Order place hone ke baad cancel ya edit nahi ho sakta.\nStatus poochhne ke liye "order status" likhein, ya reception se baat karein.',
-        booking.id
-      );
+    case 'order_cancel':
+      return handleGuestOrderCancel(phone, booking);
+    case 'order_edit':
+      return handleGuestOrderEdit(phone, booking);
     case 'request_status':
       return replyRequestStatus(phone, booking, text, lang);
     case 'facilities':
@@ -994,18 +994,100 @@ async function confirmOrder(phone, booking, sessionData = {}) {
 
   return whatsapp.sendButtons(
     phone,
-    `✅ Order Confirmed!\n\n` +
+    `✅ Order Placed!\n\n` +
     `Order ID: #${order.order_ref}\n` +
     `Room: ${booking.room_number}\n` +
     `Items:\n${itemLines}\n` +
     `Total Amount: ₹${parseFloat(order.total_amount).toFixed(0)}\n` +
+    `Status: Pending (admin confirm ka wait)\n` +
     `Estimated Delivery: 30 Minutes\n` +
     `👨‍🍳 Chef: ${STAFF.chef}\n` +
     `🧑‍🍳 Waiter: ${STAFF.waiter}\n\n` +
-    `Kitchen ko bhej diya hai.\nNote: Order ab cancel/edit nahi hoga.`,
-    [{ id: 'main_menu', title: 'Main Menu' }],
+    `Admin confirm se pehle aap Cancel / Edit kar sakte ho.`,
+    [
+      { id: 'guest_order_cancel', title: 'Cancel Order' },
+      { id: 'guest_order_edit', title: 'Edit Order' },
+      { id: 'main_menu', title: 'Main Menu' },
+    ],
     booking.id
   );
+}
+
+const ORDER_LOCKED_MSG =
+  '✅ Order confirm ho chuka hai admin/kitchen se.\nAb edit ya cancel nahi ho sakta.\nStatus ke liye "order status" likhein.';
+
+async function getLatestModifiableOrder(bookingId) {
+  const orders = await orderRepo.findAll({ booking_id: bookingId });
+  const pending = orders.find((o) => o.status === 'pending');
+  if (pending) return { order: pending, locked: false };
+  const confirmed = orders.find((o) =>
+    ['accepted', 'preparing', 'out_for_delivery', 'delivered'].includes(o.status)
+  );
+  if (confirmed) return { order: confirmed, locked: true };
+  return { order: null, locked: false };
+}
+
+async function handleGuestOrderCancel(phone, booking) {
+  if (!booking) return blockNonGuest(phone);
+  const { order, locked } = await getLatestModifiableOrder(booking.id);
+
+  if (!order) {
+    return whatsapp.sendText(phone, 'Koi active food order nahi mila cancel karne ke liye.', booking.id);
+  }
+  if (locked) {
+    return whatsapp.sendText(
+      phone,
+      `Order #${order.order_ref} — ${ORDER_LOCKED_MSG}`,
+      booking.id
+    );
+  }
+
+  await orderService.updateStatus(order.id, 'cancelled');
+  await guestService.updateSession(phone, 'idle', { cart: [] }, booking.id);
+  return whatsapp.sendButtons(
+    phone,
+    `❌ Order cancel ho gaya.\n\nOrder ID: #${order.order_ref}\nRoom: ${booking.room_number}\n\nNaya order karna ho to menu se order karein.`,
+    [
+      { id: 'main_food', title: 'Order Again' },
+      { id: 'main_menu', title: 'Main Menu' },
+    ],
+    booking.id
+  );
+}
+
+async function handleGuestOrderEdit(phone, booking) {
+  if (!booking) return blockNonGuest(phone);
+  const { order, locked } = await getLatestModifiableOrder(booking.id);
+
+  if (!order) {
+    return whatsapp.sendText(phone, 'Koi active food order nahi mila edit karne ke liye.', booking.id);
+  }
+  if (locked) {
+    return whatsapp.sendText(
+      phone,
+      `Order #${order.order_ref} — ${ORDER_LOCKED_MSG}`,
+      booking.id
+    );
+  }
+
+  // Cancel pending order and reload items into cart for re-order
+  const full = await orderRepo.findById(order.id);
+  await orderService.updateStatus(order.id, 'cancelled');
+
+  const cart = (full.items || []).map((i) => ({
+    menu_item_id: i.menu_item_id,
+    name: i.item_name,
+    quantity: i.quantity,
+    price: parseFloat(i.unit_price),
+  }));
+
+  await guestService.updateSession(phone, 'food_cart', { cart, editingOrderRef: order.order_ref }, booking.id);
+
+  return whatsapp.sendText(
+    phone,
+    `✏️ Edit mode\nPehla order #${order.order_ref} hold/cancel kiya.\nItems cart mein hain — change karke dubara Place Order karein.`,
+    booking.id
+  ).then(() => showCart(phone, booking, { cart }));
 }
 
 async function cancelCart(phone, booking) {
