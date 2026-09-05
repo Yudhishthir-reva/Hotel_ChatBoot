@@ -19,6 +19,12 @@ const USE_WHATSAPP_FLOWS = process.env.USE_WHATSAPP_FLOWS === 'true';
 
 const LAUNDRY_ITEMS = flowService.LAUNDRY_CATALOG;
 
+// Static staff names for guest-facing order messages (demo)
+const STAFF = {
+  chef: process.env.HOTEL_CHEF_NAME || 'Chef Ramesh',
+  waiter: process.env.HOTEL_WAITER_NAME || 'Amit',
+};
+
 async function handleIncoming(phone, message) {
   const { type, text, interactive } = parseMessage(message);
 
@@ -245,8 +251,9 @@ async function handleInteractive(phone, interactive, booking, session, sessionDa
   if (id.startsWith('qty_')) return addToCart(phone, booking, id.replace('qty_', ''), sessionData);
   if (id === 'cart_add_more') return showMealTypes(phone, booking, sessionData);
   if (id === 'cart_view') return showCart(phone, booking, sessionData);
-  if (id === 'cart_confirm' || id === 'cart_place') return confirmOrder(phone, booking, sessionData);
-  if (id === 'cart_cancel') return cancelCart(phone, booking);
+  if (id === 'cart_place') return askOrderConfirm(phone, booking, sessionData.cart || []);
+  if (id === 'cart_confirm' || id === 'order_yes') return confirmOrder(phone, booking, sessionData);
+  if (id === 'order_no' || id === 'cart_cancel') return cancelCart(phone, booking);
 
   // Laundry
   if (id === 'laundry_combo_shirt_pant') {
@@ -287,6 +294,14 @@ async function handleInteractive(phone, interactive, booking, session, sessionDa
   if (id === 'svc_housekeeping') return sendHousekeepingMenu(phone, booking);
   if (id === 'svc_maintenance') return promptMaintenance(phone, booking);
   if (id === 'svc_checkout') return sendCheckoutMenu(phone, booking);
+  if (id === 'co_late') {
+    await guestService.updateSession(phone, 'awaiting_late_checkout', {}, booking.id);
+    return whatsapp.sendText(
+      phone,
+      '🕐 Late checkout ke liye time likhein (e.g. "2 PM" ya "3 baje").',
+      booking.id
+    );
+  }
   if (id === 'svc_laundry') return sendLaundryMenu(phone, booking);
   if (id === 'svc_transport') return sendTransportMenu(phone, booking);
 
@@ -298,6 +313,7 @@ async function handleFreeText(phone, text, booking) {
 
   const intent = await openai.detectIntent(text);
   const lang = intent.language || 'mixed';
+  const t = (text || '').trim();
 
   switch (intent.intent) {
     case 'greeting':
@@ -305,40 +321,203 @@ async function handleFreeText(phone, text, booking) {
     case 'food':
       return handleFoodFreeText(phone, booking, text);
     case 'laundry':
-      return sendLaundryMenu(phone, booking);
+      return isBrowseOnly(t, ['laundry', 'laundry menu', 'press', 'iron', 'kapde', 'clothes press', 'dry clean'])
+        ? sendLaundryEntry(phone, booking)
+        : sendLaundryMenu(phone, booking);
     case 'transport':
-      return sendTransportMenu(phone, booking);
+      return isBrowseOnly(t, ['transport', 'cab', 'taxi', 'gaadi', 'cab book', 'taxi book'])
+        || /^(airport|station)\s*[?.!]*$/i.test(t)
+        ? sendTransportEntry(phone, booking)
+        : sendTransportMenu(phone, booking);
+    case 'services':
+      return sendServicesEntry(phone, booking);
     case 'order_status':
       return replyOrderStatus(phone, booking, text, lang);
+    case 'order_locked':
+      return whatsapp.sendText(
+        phone,
+        '❌ Order place hone ke baad cancel ya edit nahi ho sakta.\nStatus poochhne ke liye "order status" likhein, ya reception se baat karein.',
+        booking.id
+      );
     case 'request_status':
       return replyRequestStatus(phone, booking, text, lang);
     case 'facilities':
-    case 'faq':
+    case 'faq': {
+      if (isBrowseOnly(t, ['facilities', 'facility', 'hotel facilities', 'info', 'hotel info'])) {
+        return sendFacilitiesEntry(phone, booking);
+      }
       return replyHotelQuestion(phone, booking, text, lang, intent.faq_keyword);
+    }
     case 'off_topic':
       return whatsapp.sendText(phone, openai.OFF_TOPIC_REPLY, booking.id);
     case 'reception':
-      return createReceptionRequest(phone, booking);
+      return sendReceptionEntry(phone, booking);
     case 'valet':
-      return sendValetMenu(phone, booking);
+      return sendValetEntry(phone, booking);
     case 'housekeeping':
-      if (intent.issue || /bhej|chahiye|do |please|request/i.test(text)) {
-        return createHousekeepingRequest(phone, booking, intent.issue || text);
+      if (isBrowseOnly(t, ['housekeeping', 'hk', 'cleaning', 'room cleaning'])) {
+        return sendHousekeepingEntry(phone, booking);
       }
-      return sendHousekeepingMenu(phone, booking);
+      if (/towel/i.test(text)) return createHousekeepingRequest(phone, booking, 'Extra Towels');
+      if (/toiletries/i.test(text)) return createHousekeepingRequest(phone, booking, 'Toiletries');
+      if (/clean|safai/i.test(text)) return createHousekeepingRequest(phone, booking, 'Room Cleaning');
+      if (intent.issue) return createHousekeepingRequest(phone, booking, intent.issue);
+      return sendHousekeepingEntry(phone, booking);
     case 'maintenance':
+      if (isBrowseOnly(t, ['maintenance', 'repair', 'technician', 'fix'])) {
+        return sendMaintenanceEntry(phone, booking);
+      }
       return createMaintenanceRequest(phone, booking, intent.issue || text, intent.priority);
     case 'checkout':
-      return sendCheckoutMenu(phone, booking);
+      return sendCheckoutEntry(phone, booking);
     case 'late_checkout':
       return createLateCheckoutRequest(phone, booking, text);
     default: {
-      // Try hotel Q&A before dumping main menu
+      if (isBrowseOnly(t, ['services', 'service', 'more services'])) {
+        return sendServicesEntry(phone, booking);
+      }
       const answered = await replyHotelQuestion(phone, booking, text, lang, text, true);
       if (answered) return answered;
       return sendWelcome(phone, booking);
     }
   }
+}
+
+function isBrowseOnly(text, phrases) {
+  const t = (text || '').trim().toLowerCase().replace(/[?.!]+$/g, '').trim();
+  return phrases.some((p) => t === p.toLowerCase());
+}
+
+async function sendLaundryEntry(phone, booking) {
+  if (!booking) return blockNonGuest(phone);
+  await guestService.updateSession(phone, 'idle', {}, booking.id);
+  return whatsapp.sendButtons(
+    phone,
+    '👔 Laundry / Press\n\nShirt ₹50 · Pant ₹70 · Suit ₹150\nShirt+Pant = ₹120\n\nButton se shuru karein, ya type karein "2 shirt".',
+    [
+      { id: 'main_laundry', title: 'Open Laundry' },
+      { id: 'laundry_combo_shirt_pant', title: 'Shirt + Pant' },
+      { id: 'laundry_add_more', title: 'More Options' },
+    ],
+    booking.id
+  );
+}
+
+async function sendTransportEntry(phone, booking) {
+  if (!booking) return blockNonGuest(phone);
+  await guestService.updateSession(phone, 'idle', {}, booking.id);
+  return whatsapp.sendButtons(
+    phone,
+    '🚕 Transport / Cab\n\nKahan jaana hai? Button choose karein.',
+    [
+      { id: 'cab_airport', title: 'Airport' },
+      { id: 'cab_local', title: 'Local Cab' },
+      { id: 'cab_station', title: 'Station' },
+    ],
+    booking.id
+  );
+}
+
+async function sendServicesEntry(phone, booking) {
+  if (!booking) return blockNonGuest(phone);
+  await guestService.updateSession(phone, 'idle', {}, booking.id);
+  return whatsapp.sendButtons(
+    phone,
+    '🛎 Hotel Services\n\nKaunsi service chahiye?',
+    [
+      { id: 'svc_valet', title: 'Valet' },
+      { id: 'svc_housekeeping', title: 'Housekeeping' },
+      { id: 'main_services', title: 'More Services' },
+    ],
+    booking.id
+  );
+}
+
+async function sendFacilitiesEntry(phone, booking) {
+  if (!booking) return blockNonGuest(phone);
+  await guestService.updateSession(phone, 'idle', {}, booking.id);
+  return whatsapp.sendButtons(
+    phone,
+    '🏨 Hotel Facilities\n\nInfo dekhne ke liye button dabayein, ya poochhein — "wifi password", "buffet timing".',
+    [
+      { id: 'main_facilities', title: 'View Facilities' },
+      { id: 'main_menu', title: 'Main Menu' },
+    ],
+    booking.id
+  );
+}
+
+async function sendReceptionEntry(phone, booking) {
+  if (!booking) return blockNonGuest(phone);
+  await guestService.updateSession(phone, 'idle', {}, booking.id);
+  return whatsapp.sendButtons(
+    phone,
+    '☎️ Reception\n\nFront desk se baat karni hai? Confirm karein — hum request bhej denge.',
+    [
+      { id: 'main_reception', title: 'Call Reception' },
+      { id: 'main_menu', title: 'Main Menu' },
+    ],
+    booking.id
+  );
+}
+
+async function sendValetEntry(phone, booking) {
+  if (!booking) return blockNonGuest(phone);
+  await guestService.updateSession(phone, 'idle', {}, booking.id);
+  return whatsapp.sendButtons(
+    phone,
+    '🚗 Valet\n\nLuggage down ya car retrieve?',
+    [
+      { id: 'valet_luggage', title: 'Luggage Down' },
+      { id: 'valet_car', title: 'Car Retrieve' },
+      { id: 'main_menu', title: 'Main Menu' },
+    ],
+    booking.id
+  );
+}
+
+async function sendHousekeepingEntry(phone, booking) {
+  if (!booking) return blockNonGuest(phone);
+  await guestService.updateSession(phone, 'idle', {}, booking.id);
+  return whatsapp.sendButtons(
+    phone,
+    '🧹 Housekeeping\n\nKya chahiye? Button choose karein.',
+    [
+      { id: 'hk_extra_towel', title: 'Extra Towels' },
+      { id: 'hk_room_cleaning', title: 'Room Cleaning' },
+      { id: 'svc_housekeeping', title: 'More Options' },
+    ],
+    booking.id
+  );
+}
+
+async function sendMaintenanceEntry(phone, booking) {
+  if (!booking) return blockNonGuest(phone);
+  await guestService.updateSession(phone, 'idle', {}, booking.id);
+  return whatsapp.sendButtons(
+    phone,
+    '🔧 Maintenance\n\nIssue report karne ke liye button dabayein, ya seedha likhein — e.g. "AC nahi chal raha".',
+    [
+      { id: 'svc_maintenance', title: 'Report Issue' },
+      { id: 'main_menu', title: 'Main Menu' },
+    ],
+    booking.id
+  );
+}
+
+async function sendCheckoutEntry(phone, booking) {
+  if (!booking) return blockNonGuest(phone);
+  await guestService.updateSession(phone, 'idle', {}, booking.id);
+  return whatsapp.sendButtons(
+    phone,
+    '🚪 Checkout\n\nStandard checkout ya late checkout?',
+    [
+      { id: 'svc_checkout', title: 'Checkout Now' },
+      { id: 'co_late', title: 'Late Checkout' },
+      { id: 'main_menu', title: 'Main Menu' },
+    ],
+    booking.id
+  );
 }
 
 async function replyOrderStatus(phone, booking, text, language) {
@@ -357,21 +536,22 @@ async function handleFoodFreeText(phone, booking, text) {
   const menuItems = await menuRepo.findAllItems(HOTEL_ID);
   const parsed = await openai.parseFoodOrder(text, menuItems);
   const unmatched = (parsed.unmatched || []).filter(Boolean);
+  const wantsMenuOnly =
+    parsed.browse_menu ||
+    /^(menu|food menu|khana menu|menu dikhao|menu dikha|show menu)\s*[?.!]*$/i.test((text || '').trim());
 
-  // Place whatever matched; also tell guest about missing items
+  // Place whatever matched — ask Yes/No first
   if (parsed.ok && parsed.items.length) {
-    await placeDirectOrder(phone, booking, parsed.items);
-    if (unmatched.length) {
-      return whatsapp.sendText(
-        phone,
-        notOnMenuMessage(unmatched),
-        booking.id
-      );
-    }
-    return;
+    const cart = parsed.items.map((i) => ({
+      menu_item_id: i.menu_item_id,
+      name: i.name,
+      quantity: i.quantity,
+      price: i.price,
+    }));
+    return askOrderConfirm(phone, booking, cart, unmatched);
   }
 
-  if (unmatched.length && !parsed.browse_menu) {
+  if (unmatched.length && !wantsMenuOnly) {
     return whatsapp.sendButtons(
       phone,
       notOnMenuMessage(unmatched),
@@ -383,7 +563,27 @@ async function handleFoodFreeText(phone, booking, text) {
     );
   }
 
+  // "menu" typed → give Menu button (don't jump into categories yet)
+  if (wantsMenuOnly || !parsed.ok) {
+    return sendMenuButtons(phone, booking);
+  }
+
   return startFoodFlow(phone, booking);
+}
+
+async function sendMenuButtons(phone, booking) {
+  if (!booking) return blockNonGuest(phone);
+  await guestService.updateSession(phone, 'idle', {}, booking.id);
+  return whatsapp.sendButtons(
+    phone,
+    '🍽️ Food Menu\n\nMenu dekhne ke liye button dabayein.\nYa seedha type karein — e.g. "2 cup chai".',
+    [
+      { id: 'main_food', title: 'View Menu' },
+      { id: 'meal_dinner', title: 'Dinner' },
+      { id: 'meal_snacks', title: 'Snacks' },
+    ],
+    booking.id
+  );
 }
 
 function notOnMenuMessage(unmatched) {
@@ -394,30 +594,70 @@ function notOnMenuMessage(unmatched) {
   );
 }
 
-async function placeDirectOrder(phone, booking, items) {
-  const cart = items.map((i) => ({
-    menu_item_id: i.menu_item_id,
-    quantity: i.quantity,
-  }));
+async function askOrderConfirm(phone, booking, cartItems, unmatched = []) {
+  if (!booking) return blockNonGuest(phone);
+  const cart = (cartItems || []).filter((c) => c.menu_item_id && c.quantity);
+  if (!cart.length) {
+    return whatsapp.sendText(phone, 'Cart empty hai. Pehle item add karein.', booking.id);
+  }
 
-  const order = await orderService.createOrder(booking.id, cart);
-  await guestService.updateSession(phone, 'idle', { cart: [] }, booking.id);
+  // Ensure name/price for display
+  const displayCart = [];
+  for (const c of cart) {
+    let name = c.name;
+    let price = c.price;
+    if (name == null || price == null) {
+      const item = await menuRepo.getItemById(c.menu_item_id);
+      if (!item) continue;
+      name = item.name;
+      price = parseFloat(item.price);
+    }
+    displayCart.push({
+      menu_item_id: c.menu_item_id,
+      name,
+      quantity: c.quantity,
+      price: parseFloat(price),
+    });
+  }
 
-  const itemLines = (order.items || [])
-    .map((i) => `• ${i.item_name} × ${i.quantity} — ₹${parseFloat(i.subtotal).toFixed(0)}`)
-    .join('\n');
+  if (!displayCart.length) {
+    return whatsapp.sendText(phone, 'Items available nahi mile.', booking.id);
+  }
 
-  return whatsapp.sendText(
+  let total = 0;
+  const lines = displayCart.map((c) => {
+    const sub = c.price * c.quantity;
+    total += sub;
+    return `• ${c.name} × ${c.quantity} — ₹${sub.toFixed(0)}`;
+  });
+
+  let extra = '';
+  if (unmatched.length) {
+    extra = `\n\n⚠️ Menu mein nahi: ${unmatched.join(', ')}`;
+  }
+
+  await guestService.updateSession(phone, 'food_confirm', { cart: displayCart }, booking.id);
+
+  return whatsapp.sendButtons(
     phone,
-    `✅ Order Confirmed!\n\n` +
-      `Order ID: #${order.order_ref}\n` +
+    `🛒 Order confirm karein?\n\n` +
       `Room: ${booking.room_number}\n` +
-      `Items:\n${itemLines}\n` +
-      `Total: ₹${parseFloat(order.total_amount).toFixed(0)}\n` +
-      `Estimated Delivery: ~30 min\n\n` +
-      `Kitchen ko bhej diya hai. Update milega jab status change hoga. 🍽️`,
+      `${lines.join('\n')}\n\n` +
+      `────────────\nTotal: ₹${total.toFixed(0)}\n` +
+      `👨‍🍳 Chef: ${STAFF.chef}\n` +
+      `🧑‍🍳 Waiter: ${STAFF.waiter}` +
+      extra +
+      `\n\nYes dabane par kitchen ko order chala jayega.`,
+    [
+      { id: 'order_yes', title: 'Yes' },
+      { id: 'order_no', title: 'No' },
+    ],
     booking.id
   );
+}
+
+async function placeDirectOrder(phone, booking, items) {
+  return askOrderConfirm(phone, booking, items);
 }
 
 async function replyRequestStatus(phone, booking, text, language) {
@@ -461,15 +701,34 @@ async function replyHotelQuestion(phone, booking, text, language, faqKeyword, so
   return sendFacilitiesMenu(phone, booking);
 }
 
-async function handleStateInput(phone, text, booking, session) {
+async function handleStateInput(phone, text, booking, session, sessionData = {}) {
   if (!booking) {
     await guestService.resetSession(phone);
     return blockNonGuest(phone);
   }
 
+  if (session.current_state === 'food_confirm') {
+    const lower = (text || '').trim().toLowerCase();
+    const data = sessionData && Object.keys(sessionData).length
+      ? sessionData
+      : guestService.parseSessionData(session);
+    if (/^(yes|y|haan|ha|ok|confirm|order karo)$/i.test(lower)) {
+      return confirmOrder(phone, booking, data);
+    }
+    if (/^(no|n|nahi|cancel|mat karo)$/i.test(lower)) {
+      return cancelCart(phone, booking);
+    }
+    return askOrderConfirm(phone, booking, data.cart || []);
+  }
+
   if (session.current_state === 'awaiting_maintenance') {
     await guestService.resetSession(phone);
     return createMaintenanceRequest(phone, booking, text, 'medium');
+  }
+
+  if (session.current_state === 'awaiting_late_checkout') {
+    await guestService.resetSession(phone);
+    return createLateCheckoutRequest(phone, booking, text);
   }
 
   // Manual menus + free text both work — typing never blocked by list/button state
@@ -733,15 +992,18 @@ async function confirmOrder(phone, booking, sessionData = {}) {
 
   const itemLines = (order.items || []).map((i) => `• ${i.item_name} × ${i.quantity}`).join('\n');
 
-  return whatsapp.sendText(
+  return whatsapp.sendButtons(
     phone,
     `✅ Order Confirmed!\n\n` +
     `Order ID: #${order.order_ref}\n` +
     `Room: ${booking.room_number}\n` +
     `Items:\n${itemLines}\n` +
     `Total Amount: ₹${parseFloat(order.total_amount).toFixed(0)}\n` +
-    `Estimated Delivery: 30 Minutes\n\n` +
-    `You will receive an update shortly. 🍽️`,
+    `Estimated Delivery: 30 Minutes\n` +
+    `👨‍🍳 Chef: ${STAFF.chef}\n` +
+    `🧑‍🍳 Waiter: ${STAFF.waiter}\n\n` +
+    `Kitchen ko bhej diya hai.\nNote: Order ab cancel/edit nahi hoga.`,
+    [{ id: 'main_menu', title: 'Main Menu' }],
     booking.id
   );
 }

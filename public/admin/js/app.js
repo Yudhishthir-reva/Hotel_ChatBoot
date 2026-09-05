@@ -331,14 +331,15 @@ async function renderOrders(el) {
 }
 
 function orderActions(o) {
+  // After place: only forward progress — no cancel/reject/edit
   const actions = {
-    pending: ['accepted','rejected'],
-    accepted: ['preparing','rejected'],
+    pending: ['accepted'],
+    accepted: ['preparing'],
     preparing: ['out_for_delivery'],
     out_for_delivery: ['delivered'],
   };
   return (actions[o.status] || []).map((s) =>
-    `<button class="btn btn-sm btn-${s==='rejected'?'danger':'success'}" onclick="updateOrderStatus(${o.id},'${s}')">${s.replace(/_/g,' ')}</button>`
+    `<button class="btn btn-sm btn-success" onclick="updateOrderStatus(${o.id},'${s}')">${s.replace(/_/g,' ')}</button>`
   ).join('');
 }
 

@@ -13,7 +13,7 @@ function getClient() {
 const SYSTEM_PROMPT = `You are an intent classifier for a hotel WhatsApp guest assistant.
 Analyze the guest message and return ONLY valid JSON:
 {
-  "intent": "food|laundry|transport|facilities|reception|valet|housekeeping|maintenance|checkout|late_checkout|faq|order_status|request_status|greeting|off_topic|unknown",
+  "intent": "food|laundry|transport|facilities|reception|valet|housekeeping|maintenance|checkout|late_checkout|faq|order_status|order_locked|request_status|services|greeting|off_topic|unknown",
   "issue": "short issue description if maintenance/housekeeping, else null",
   "priority": "low|medium|high",
   "faq_keyword": "keyword to search FAQ if intent is faq/facilities, else null",
@@ -24,9 +24,11 @@ Rules:
 - Specific food/drink order in text ("2 cup chai bhej do", "ek biryani", "cold coffee 2", "paneer tikka bhej do") → food (guest may skip menu)
 - Want to browse menu / "menu dikhao" / "khana order karna" without naming items → food
 - Asking STATUS of an existing food order ("mera order", "order status", "khana kab aayega", "mene order kiya tha") → order_status
+- Want to CANCEL or EDIT an already placed food order ("order cancel", "order edit", "order badlo") → order_locked
 - Asking STATUS of laundry/valet/HK/maintenance/request ("mera request", "laundry status", "kab hoga") → request_status
 - "laundry", "press", "iron", "kapde" (to place new) → laundry
 - "cab", "taxi", "transport", "airport" → transport
+- "services", "more services", "hotel services" → services
 - Hotel info: wifi, pool, spa, buffet, timing, facilities → facilities (set faq_keyword)
 - Timing/password/facility questions → faq (set faq_keyword)
 - "reception", "front desk", "manager" → reception
@@ -74,11 +76,18 @@ function fallbackIntent(message) {
     return { intent: 'request_status', language: 'mixed' };
   }
 
+  if (/order.*(cancel|edit|badlo|change|modify)|cancel.*order|edit.*order|order cancel|order edit/i.test(lower)) {
+    return { intent: 'order_locked', language: 'mixed' };
+  }
+
   if (/chai|tea|coffee|biryani|paneer|pizza|fries|sandwich|gulab|ice cream|bhej do|bhej dena|cup |plates?|order kar|khana |pani ki|paani ki|water bottle|bottel/i.test(lower)) {
     return { intent: 'food', language: 'mixed' };
   }
   if (/menu|food|dinner|lunch|breakfast|order|khana/i.test(lower)) return { intent: 'food', language: 'mixed' };
   if (/laundry|press|iron|kapde|clothes/i.test(lower)) return { intent: 'laundry', language: 'mixed' };
+  if (/^(services|service|more services|hotel services)\b/i.test(lower) || /\bmore services\b/i.test(lower)) {
+    return { intent: 'services', language: 'mixed' };
+  }
   if (/cab|taxi|transport|airport|station/i.test(lower)) return { intent: 'transport', language: 'mixed' };
   if (/reception|front desk|manager|callback/i.test(lower)) return { intent: 'reception', language: 'mixed' };
   if (/facility|facilities|wifi|pool|spa|buffet|timing|password|sham|evening/i.test(lower)) {

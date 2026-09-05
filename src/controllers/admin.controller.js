@@ -114,8 +114,10 @@ async function getOrders(req, res) {
 
 async function updateOrderStatus(req, res) {
   const { status } = req.body;
-  const valid = ['accepted', 'preparing', 'out_for_delivery', 'delivered', 'rejected'];
-  if (!valid.includes(status)) return error(res, 'Invalid status');
+  const valid = ['accepted', 'preparing', 'out_for_delivery', 'delivered'];
+  if (!valid.includes(status)) {
+    return error(res, 'Invalid status. Order cancel/reject allowed nahi hai after place.');
+  }
 
   const order = await orderService.updateStatus(req.params.id, status);
   const msg = orderService.getStatusMessage(status);
