@@ -1,0 +1,87 @@
+{
+  "version": "6.0",
+  "routing_model": {
+    "FACILITIES": []
+  },
+  "screens": [
+    {
+      "id": "FACILITIES",
+      "title": "Hotel Facilities",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "faq_options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": [
+            {
+              "id": "1",
+              "title": "WiFi",
+              "description": "Password & network"
+            },
+            {
+              "id": "2",
+              "title": "Pool",
+              "description": "Timings"
+            },
+            {
+              "id": "3",
+              "title": "Spa",
+              "description": "Bookings"
+            }
+          ]
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Facilities & Info"
+          },
+          {
+            "type": "TextBody",
+            "text": "Choose a topic to get details."
+          },
+          {
+            "type": "Form",
+            "name": "facilities_form",
+            "children": [
+              {
+                "type": "RadioButtonsGroup",
+                "name": "faq_id",
+                "label": "What do you need?",
+                "required": true,
+                "data-source": "${data.faq_options}"
+              },
+              {
+                "type": "Footer",
+                "label": "Get Info",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "faq_id": "${form.faq_id}",
+                    "flow_name": "facilities"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

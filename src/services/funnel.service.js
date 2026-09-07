@@ -10,6 +10,7 @@ const hotelRepo = require('../repositories/hotel.repository');
 const faqRepo = require('../repositories/faq.repository');
 const orderRepo = require('../repositories/order.repository');
 const requestRepo = require('../repositories/request.repository');
+const { imageUrlToFlowListBase64 } = require('../utils/flowImage');
 
 const HOTEL_ID = parseInt(process.env.DEFAULT_HOTEL_ID || '1', 10);
 
@@ -54,7 +55,9 @@ async function handleIncoming(phone, message) {
     return handleStateInput(phone, text, booking, session, sessionData);
   }
 
-  return handleFreeText(phone, text, booking, session, sessionData);
+  // TODO(later): re-enable free-text NLP (type "2 chai", FAQ, intent routing)
+  // return handleFreeText(phone, text, booking, session, sessionData);
+  return sendWelcome(phone, booking);
 }
 
 function parseMessage(message) {
@@ -114,13 +117,15 @@ async function handleFlowSubmission(phone, booking, flowResponse) {
   switch (name) {
     case 'laundry_press':
     case 'laundry': {
-      if (!flowResponse.items?.length) {
-        return whatsapp.sendText(phone, 'Koi item select nahi hua.', booking.id)
-          .then(() => sendLaundryMenu(phone, booking));
+      // New qty dropdowns: qty_shirt / qty_pant / qty_suit
+      let laundryCart = flowService.buildLaundryCartFromQtyPayload(raw);
+      // Legacy checkbox Flow payload
+      if (!laundryCart.length && flowResponse.items?.length) {
+        laundryCart = flowService.buildLaundryCartFromFlowItems(flowResponse.items);
       }
-      const laundryCart = flowService.buildLaundryCartFromFlowItems(flowResponse.items);
       if (!laundryCart.length) {
-        return whatsapp.sendText(phone, 'Invalid laundry items.', booking.id);
+        return whatsapp.sendText(phone, 'No laundry items selected.', booking.id)
+          .then(() => sendLaundryMenu(phone, booking));
       }
       return placeLaundryOrder(phone, booking, { laundryCart });
     }
@@ -159,8 +164,18 @@ async function handleFlowSubmission(phone, booking, flowResponse) {
       return createCheckoutRequest(phone, booking);
     }
 
-    case 'food': {
-      return placeFoodOrderFromFlow(phone, booking, flowResponse.items || [], raw.quantity_each || '1');
+    case 'food':
+    case 'food_edit': {
+      return placeFoodOrderFromFlow(phone, booking, raw);
+    }
+
+    case 'facilities': {
+      const faqId = parseInt(raw.faq_id, 10);
+      if (!faqId) {
+        return whatsapp.sendText(phone, 'Please select a topic.', booking.id)
+          .then(() => sendFacilitiesMenu(phone, booking));
+      }
+      return answerFaqById(phone, booking, faqId);
     }
 
     default:
@@ -169,7 +184,7 @@ async function handleFlowSubmission(phone, booking, flowResponse) {
   }
 }
 
-async function openHotelFlow(phone, booking, flowKey, bodyExtra = '') {
+async function openHotelFlow(phone, booking, flowKey, bodyExtra = '', screenData = null) {
   // Disabled for demo — enable with USE_WHATSAPP_FLOWS=true after Meta approval
   if (!USE_WHATSAPP_FLOWS) return false;
 
@@ -185,10 +200,11 @@ async function openHotelFlow(phone, booking, flowKey, bodyExtra = '') {
         flowId,
         flowCta: meta.cta,
         headerText: meta.header,
-        bodyText: `Room ${booking.room_number}\n\n${bodyExtra || 'Form fill karke submit karein.'}`.slice(0, 1024),
+        bodyText: `Room ${booking.room_number}\n\n${bodyExtra || 'Please fill the form and submit.'}`.slice(0, 1024),
         footerText: 'Hotel Services',
         screen: meta.screen,
-        flowToken: `${flowKey}:${booking.id}:${phone}`,
+        flowToken: `${flowKey}_${booking.id}_${String(phone).replace(/\D/g, '')}`.slice(0, 200),
+        screenData,
       },
       booking.id
     );
@@ -199,19 +215,169 @@ async function openHotelFlow(phone, booking, flowKey, bodyExtra = '') {
   }
 }
 
-async function placeFoodOrderFromFlow(phone, booking, itemKeys, qtyEach) {
-  const qty = Math.min(3, Math.max(1, parseInt(qtyEach, 10) || 1));
-  const allItems = await menuRepo.findAllItems(HOTEL_ID);
-  const cart = [];
+/** Page size for food CheckboxGroup + images (More items pagination). */
+const FOOD_PAGE_SIZE = 10;
 
-  for (const key of itemKeys) {
-    const wantName = flowService.FOOD_FLOW_ITEMS[key];
-    if (!wantName) continue;
-    const menuItem = allItems.find(
-      (i) => i.is_available && i.name.toLowerCase() === wantName.toLowerCase()
-    );
+async function listFoodMenuItems(opts = {}) {
+  const allItems = await menuRepo.findAllItems(HOTEL_ID);
+  let available = allItems.filter(
+    (item) => item.is_available === 1 || item.is_available === true
+  );
+
+  if (opts.categoryId) {
+    const catId = parseInt(opts.categoryId, 10);
+    available = available.filter((item) => Number(item.category_id) === catId);
+  } else if (opts.mealType) {
+    const meal = String(opts.mealType).toLowerCase();
+    available = available.filter((item) => String(item.meal_type || '').toLowerCase() === meal);
+  }
+  return available;
+}
+
+/**
+ * Build FOOD flow screen data: one page of products with images.
+ * Returns { products, page, total, hasMore } — only `products` is sent to Meta.
+ */
+async function buildFoodFlowScreenData(orderItems = [], opts = {}) {
+  const available = await listFoodMenuItems(opts);
+  const page = Math.max(0, parseInt(opts.page, 10) || 0);
+
+  // Prefer order-edit items on page 0 (front of list, unique)
+  const ordered = [];
+  const seen = new Set();
+  if (page === 0) {
+    for (const line of orderItems || []) {
+      let item = null;
+      if (line.menu_item_id != null) {
+        item = available.find((row) => String(row.id) === String(line.menu_item_id));
+      }
+      if (!item && (line.item_name || line.name)) {
+        const want = String(line.item_name || line.name).toLowerCase().trim();
+        item = available.find((row) => String(row.name || '').toLowerCase() === want);
+      }
+      if (item && !seen.has(String(item.id))) {
+        seen.add(String(item.id));
+        ordered.push(item);
+      }
+    }
+  }
+
+  const rest = available.filter((item) => !seen.has(String(item.id)));
+  // Images first within rest for nicer pages
+  rest.sort((a, b) => {
+    const ai = a.image_url ? 0 : 1;
+    const bi = b.image_url ? 0 : 1;
+    if (ai !== bi) return ai - bi;
+    return 0;
+  });
+  const fullList = page === 0 ? [...ordered, ...rest] : available;
+
+  const total = fullList.length;
+  const startIdx = page * FOOD_PAGE_SIZE;
+  const slice = fullList.slice(startIdx, startIdx + FOOD_PAGE_SIZE);
+  const hasMore = startIdx + slice.length < total;
+
+  // Smaller images when many products on one page (payload limit)
+  const maxImageBytes = slice.length > 6 ? 45_000 : 80_000;
+
+  const makeQtyOptions = (unitPrice) => {
+    const price = Math.round(parseFloat(unitPrice) || 0);
+    const options = [{ id: '0', title: '0 — skip' }];
+    for (let q = 1; q <= 5; q += 1) {
+      options.push({ id: String(q), title: `${q} · ₹${price * q}` });
+    }
+    return options;
+  };
+
+  const products = [];
+  const data = {};
+
+  for (let i = 0; i < FOOD_PAGE_SIZE; i += 1) {
+    data[`has_${i}`] = false;
+    data[`label_${i}`] = `Item ${i + 1}`;
+    data[`key_${i}`] = '';
+    data[`qty_options_${i}`] = makeQtyOptions(0);
+    data[`init_qty_${i}`] = '1';
+  }
+
+  for (let i = 0; i < slice.length; i += 1) {
+    const menuItem = slice[i];
+    const id = String(menuItem.id);
+    const price = Math.round(parseFloat(menuItem.price) || 0);
+    const name = String(menuItem.name || 'Item');
+    const entry = {
+      id,
+      title: `${name} · ₹${price}`.slice(0, 30),
+      description: String(menuItem.category_name || 'Menu').slice(0, 30),
+      'alt-text': name.slice(0, 100),
+    };
+    if (menuItem.image_url) {
+      const raw = await imageUrlToFlowListBase64(menuItem.image_url, maxImageBytes);
+      if (raw) entry.image = raw;
+    }
+    products.push(entry);
+    data[`has_${i}`] = true;
+    data[`key_${i}`] = id;
+    data[`label_${i}`] = name.slice(0, 24);
+    data[`qty_options_${i}`] = makeQtyOptions(price);
+    data[`init_qty_${i}`] = '1';
+  }
+
+  if (!products.length) {
+    products.push({
+      id: '0',
+      title: 'No items available',
+      description: 'Ask staff',
+      'alt-text': 'No items',
+    });
+    data.has_0 = true;
+    data.key_0 = '0';
+    data.label_0 = 'No items';
+  }
+
+  data.products = products;
+  console.log('[Flow] Food page', page, 'products', products.length, '/', total, 'hasMore', hasMore);
+  return { ...data, page, total, hasMore };
+}
+
+async function placeFoodOrderFromFlow(phone, booking, raw = {}) {
+  const allItems = await menuRepo.findAllItems(HOTEL_ID);
+
+  const resolveMenuItem = (key) => {
+    if (key == null || key === '' || key === '0') return null;
+    const byId = allItems.find((item) => String(item.id) === String(key));
+    if (byId && (byId.is_available === 1 || byId.is_available === true)) return byId;
+    const wantName = flowService.FOOD_FLOW_ITEMS[String(key)];
+    if (!wantName) return null;
+    return allItems.find(
+      (item) => (item.is_available === 1 || item.is_available === true)
+        && String(item.name || '').toLowerCase() === wantName.toLowerCase()
+    ) || null;
+  };
+
+  let selected = raw.products || raw.selected_ids;
+  if (typeof selected === 'string') {
+    try {
+      selected = JSON.parse(selected);
+    } catch {
+      selected = selected.includes(',') ? selected.split(',') : [selected];
+    }
+  }
+  if (!Array.isArray(selected)) selected = [];
+  const selectedSet = new Set(selected.map(String));
+
+  const added = [];
+
+  // Preferred: selected products + per-item qty from FOOD_QTY screen
+  for (let i = 0; i < FOOD_PAGE_SIZE; i += 1) {
+    const key = raw[`key_${i}`];
+    if (!key || key === '0') continue;
+    if (selectedSet.size && !selectedSet.has(String(key))) continue;
+    const qty = Math.min(5, Math.max(0, parseInt(raw[`qty_${i}`], 10) || 0));
+    if (qty < 1) continue;
+    const menuItem = resolveMenuItem(key);
     if (!menuItem) continue;
-    cart.push({
+    added.push({
       menu_item_id: menuItem.id,
       name: menuItem.name,
       quantity: qty,
@@ -219,12 +385,97 @@ async function placeFoodOrderFromFlow(phone, booking, itemKeys, qtyEach) {
     });
   }
 
-  if (!cart.length) {
-    return whatsapp.sendText(phone, 'Selected items menu mein available nahi. Chat se order karein.', booking.id)
-      .then(() => startFoodFlow(phone, booking));
+  // Fallback: selected only → qty 1 each (old single-screen flow)
+  if (!added.length) {
+    for (const productKey of selected) {
+      const menuItem = resolveMenuItem(productKey);
+      if (!menuItem) continue;
+      added.push({
+        menu_item_id: menuItem.id,
+        name: menuItem.name,
+        quantity: 1,
+        price: parseFloat(menuItem.price),
+      });
+    }
   }
 
-  return confirmOrder(phone, booking, { cart });
+  if (!added.length && (raw.product_id || raw.product)) {
+    const menuItem = resolveMenuItem(raw.product_id || raw.product);
+    const qty = Math.min(10, Math.max(1, parseInt(raw.qty, 10) || 1));
+    if (menuItem) {
+      added.push({
+        menu_item_id: menuItem.id,
+        name: menuItem.name,
+        quantity: qty,
+        price: parseFloat(menuItem.price),
+      });
+    }
+  }
+
+  if (!added.length) {
+    return whatsapp.sendText(
+      phone,
+      'No items selected. Please choose at least one product.',
+      booking.id
+    ).then(() => startFoodFlow(phone, booking));
+  }
+
+  const session = await guestService.getOrCreateSession(phone);
+  const sessionData = guestService.parseSessionData(session);
+  const cart = [...(sessionData.cart || [])];
+
+  for (const line of added) {
+    const existing = cart.find((c) => String(c.menu_item_id) === String(line.menu_item_id));
+    if (existing) existing.quantity += line.quantity;
+    else cart.push({ ...line });
+  }
+
+  const foodPage = Math.max(0, parseInt(sessionData.foodPage, 10) || 0);
+  const foodHasMore = Boolean(sessionData.foodHasMore);
+  const mealType = sessionData.mealType || null;
+  const categoryId = sessionData.categoryId || null;
+
+  await guestService.updateSession(phone, 'food_cart', {
+    cart,
+    foodPage,
+    foodHasMore,
+    mealType,
+    categoryId,
+  }, booking.id);
+
+  const names = added.map((a) => a.name).join(', ');
+
+  if (foodHasMore) {
+    return whatsapp.sendButtons(
+      phone,
+      `Added to cart: ${names}\n\nCart: ${cart.length} item(s).\nMore products available on the next page.`,
+      [
+        { id: 'food_more_items', title: 'More Items' },
+        { id: 'food_review_order', title: 'Review Order' },
+        { id: 'cart_cancel', title: 'Cancel' },
+      ],
+      booking.id
+    );
+  }
+
+  return askOrderConfirm(phone, booking, cart);
+}
+
+async function openFoodMoreItems(phone, booking, sessionData = {}) {
+  const nextPage = Math.max(0, parseInt(sessionData.foodPage, 10) || 0) + 1;
+  const ok = await openFoodMenuFlow(
+    phone,
+    booking,
+    {
+      page: nextPage,
+      mealType: sessionData.mealType,
+      categoryId: sessionData.categoryId,
+      orderItems: sessionData.cart || [],
+    },
+    `More items — page ${nextPage + 1}. Select products with images.`
+  );
+  if (ok) return;
+  return askOrderConfirm(phone, booking, sessionData.cart || []);
 }
 
 async function handleInteractive(phone, interactive, booking, session, sessionData) {
@@ -245,17 +496,21 @@ async function handleInteractive(phone, interactive, booking, session, sessionDa
   if (id === 'main_menu') return sendMainMenu(phone, booking);
 
   // Food
+  if (id === 'food_quick' || id === 'food_full_menu') return startFoodFlow(phone, booking);
   if (id.startsWith('meal_')) return showCategories(phone, booking, id.replace('meal_', ''), sessionData);
   if (id.startsWith('cat_')) return showItems(phone, booking, parseInt(id.replace('cat_', ''), 10), sessionData);
   if (id.startsWith('item_')) return askQuantity(phone, booking, parseInt(id.replace('item_', ''), 10), sessionData);
   if (id.startsWith('qty_')) return addToCart(phone, booking, id.replace('qty_', ''), sessionData);
   if (id === 'cart_add_more') return showMealTypes(phone, booking, sessionData);
+  if (id === 'food_more_items') return openFoodMoreItems(phone, booking, sessionData);
+  if (id === 'food_review_order') return askOrderConfirm(phone, booking, sessionData.cart || []);
   if (id === 'cart_view') return showCart(phone, booking, sessionData);
   if (id === 'cart_place') return askOrderConfirm(phone, booking, sessionData.cart || []);
   if (id === 'cart_confirm' || id === 'order_yes') return confirmOrder(phone, booking, sessionData);
   if (id === 'order_no' || id === 'cart_cancel') return cancelCart(phone, booking);
   if (id === 'guest_order_cancel') return handleGuestOrderCancel(phone, booking);
-  if (id === 'guest_order_edit') return handleGuestOrderEdit(phone, booking);
+  // TODO(tomorrow): re-enable Edit Order with Flow Data Endpoint
+  // if (id === 'guest_order_edit') return handleGuestOrderEdit(phone, booking);
 
   // Laundry
   if (id === 'laundry_combo_shirt_pant') {
@@ -310,6 +565,7 @@ async function handleInteractive(phone, interactive, booking, session, sessionDa
   return sendMainMenu(phone, booking);
 }
 
+// TODO(later): unused in MVP — guests use buttons/flows only. Re-enable via handleIncoming.
 async function handleFreeText(phone, text, booking) {
   if (!booking) return blockNonGuest(phone);
 
@@ -337,8 +593,9 @@ async function handleFreeText(phone, text, booking) {
       return replyOrderStatus(phone, booking, text, lang);
     case 'order_cancel':
       return handleGuestOrderCancel(phone, booking);
-    case 'order_edit':
-      return handleGuestOrderEdit(phone, booking);
+    // TODO(tomorrow): re-enable Edit Order with Flow Data Endpoint
+    // case 'order_edit':
+    //   return handleGuestOrderEdit(phone, booking);
     case 'request_status':
       return replyRequestStatus(phone, booking, text, lang);
     case 'facilities':
@@ -393,7 +650,7 @@ async function sendLaundryEntry(phone, booking) {
   await guestService.updateSession(phone, 'idle', {}, booking.id);
   return whatsapp.sendButtons(
     phone,
-    '👔 Laundry / Press\n\nShirt ₹50 · Pant ₹70 · Suit ₹150\nShirt+Pant = ₹120\n\nButton se shuru karein, ya type karein "2 shirt".',
+    '👔 Laundry / Press\n\nShirt ₹50 · Pant ₹70 · Suit ₹150\nShirt+Pant = ₹120\n\nButton se shuru karein.',
     [
       { id: 'main_laundry', title: 'Open Laundry' },
       { id: 'laundry_combo_shirt_pant', title: 'Shirt + Pant' },
@@ -438,7 +695,7 @@ async function sendFacilitiesEntry(phone, booking) {
   await guestService.updateSession(phone, 'idle', {}, booking.id);
   return whatsapp.sendButtons(
     phone,
-    '🏨 Hotel Facilities\n\nInfo dekhne ke liye button dabayein, ya poochhein — "wifi password", "buffet timing".',
+    '🏨 Hotel Facilities\n\nInfo dekhne ke liye button dabayein.',
     [
       { id: 'main_facilities', title: 'View Facilities' },
       { id: 'main_menu', title: 'Main Menu' },
@@ -496,7 +753,7 @@ async function sendMaintenanceEntry(phone, booking) {
   await guestService.updateSession(phone, 'idle', {}, booking.id);
   return whatsapp.sendButtons(
     phone,
-    '🔧 Maintenance\n\nIssue report karne ke liye button dabayein, ya seedha likhein — e.g. "AC nahi chal raha".',
+    '🔧 Maintenance\n\nIssue report karne ke liye button dabayein.',
     [
       { id: 'svc_maintenance', title: 'Report Issue' },
       { id: 'main_menu', title: 'Main Menu' },
@@ -556,7 +813,7 @@ async function handleFoodFreeText(phone, booking, text) {
       phone,
       notOnMenuMessage(unmatched),
       [
-        { id: 'main_food', title: 'View Menu' },
+        { id: 'main_food', title: '🍽 View Menu' },
         { id: 'main_menu', title: 'Main Menu' },
       ],
       booking.id
@@ -576,11 +833,11 @@ async function sendMenuButtons(phone, booking) {
   await guestService.updateSession(phone, 'idle', {}, booking.id);
   return whatsapp.sendButtons(
     phone,
-    '🍽️ Food Menu\n\nMenu dekhne ke liye button dabayein.\nYa seedha type karein — e.g. "2 cup chai".',
+    '🍽️ Food Menu\n\nMenu dekhne ke liye button dabayein.',
     [
-      { id: 'main_food', title: 'View Menu' },
-      { id: 'meal_dinner', title: 'Dinner' },
-      { id: 'meal_snacks', title: 'Snacks' },
+      { id: 'main_food', title: '🍽 View Menu' },
+      { id: 'meal_dinner', title: '🌙 Dinner' },
+      { id: 'meal_snacks', title: '🍿 Snacks' },
     ],
     booking.id
   );
@@ -640,17 +897,18 @@ async function askOrderConfirm(phone, booking, cartItems, unmatched = []) {
 
   return whatsapp.sendButtons(
     phone,
-    `🛒 Order confirm karein?\n\n` +
-      `Room: ${booking.room_number}\n` +
+    `Confirm your order?\n\n` +
+      `Room: ${booking.room_number}\n\n` +
       `${lines.join('\n')}\n\n` +
-      `────────────\nTotal: ₹${total.toFixed(0)}\n` +
-      `👨‍🍳 Chef: ${STAFF.chef}\n` +
-      `🧑‍🍳 Waiter: ${STAFF.waiter}` +
+      `────────────\n` +
+      `Total: ₹${total.toFixed(0)}\n\n` +
+      `Chef: ${STAFF.chef}\n` +
+      `Waiter: ${STAFF.waiter}` +
       extra +
-      `\n\nYes dabane par kitchen ko order chala jayega.`,
+      `\n\nTap Confirm to send this to the kitchen.`,
     [
-      { id: 'order_yes', title: 'Yes' },
-      { id: 'order_no', title: 'No' },
+      { id: 'order_yes', title: 'Confirm' },
+      { id: 'order_no', title: 'Cancel' },
     ],
     booking.id
   );
@@ -731,8 +989,9 @@ async function handleStateInput(phone, text, booking, session, sessionData = {})
     return createLateCheckoutRequest(phone, booking, text);
   }
 
-  // Manual menus + free text both work — typing never blocked by list/button state
-  return handleFreeText(phone, text, booking);
+  // TODO(later): re-enable free-text NLP — typing never blocked by list/button state
+  // return handleFreeText(phone, text, booking);
+  return sendWelcome(phone, booking);
 }
 
 async function blockNonGuest(phone) {
@@ -759,13 +1018,13 @@ async function sendWelcome(phone, booking) {
     [{
       title: 'Services',
       rows: [
-        { id: 'main_food', title: 'Food / Dining', description: 'Menu tap ya type karke order' },
-        { id: 'main_laundry', title: 'Laundry / Press', description: 'Clothes press & laundry' },
-        { id: 'main_transport', title: 'Transport / Cab', description: 'Airport & local cab' },
-        { id: 'main_facilities', title: 'Hotel Facilities', description: 'WiFi, pool, spa, timings' },
-        { id: 'main_reception', title: 'Reception', description: 'Talk to front desk' },
-        { id: 'main_services', title: 'More Services', description: 'Valet, cleaning, checkout' },
-        { id: 'main_stay', title: 'My Stay', description: 'Your room & booking info' },
+        { id: 'main_food', title: '🍽 Food / Dining', description: 'Order from the menu' },
+        { id: 'main_laundry', title: '👔 Laundry / Press', description: 'Clothes press & laundry' },
+        { id: 'main_transport', title: '🚕 Transport / Cab', description: 'Airport & local cab' },
+        { id: 'main_facilities', title: 'ℹ️ Hotel Facilities', description: 'WiFi, pool, spa, timings' },
+        { id: 'main_reception', title: '🛎️ Reception', description: 'Talk to front desk' },
+        { id: 'main_services', title: '✨ More Services', description: 'Valet, cleaning, checkout' },
+        { id: 'main_stay', title: '🛏️ My Stay', description: 'Your room & booking info' },
       ],
     }],
     booking.id
@@ -782,12 +1041,12 @@ async function sendMainMenu(phone, booking) {
     [{
       title: 'Services',
       rows: [
-        { id: 'main_food', title: 'Food / Dining', description: 'Menu tap ya type karke order' },
-        { id: 'main_laundry', title: 'Laundry / Press', description: 'Clothes press & laundry' },
-        { id: 'main_transport', title: 'Transport / Cab', description: 'Airport & local cab' },
-        { id: 'main_facilities', title: 'Hotel Facilities', description: 'WiFi, pool, spa, timings' },
-        { id: 'main_reception', title: 'Reception', description: 'Talk to front desk' },
-        { id: 'main_services', title: 'More Services', description: 'Valet, cleaning, checkout' },
+        { id: 'main_food', title: '🍽 Food / Dining', description: 'Order from the menu' },
+        { id: 'main_laundry', title: '👔 Laundry / Press', description: 'Clothes press & laundry' },
+        { id: 'main_transport', title: '🚕 Transport / Cab', description: 'Airport & local cab' },
+        { id: 'main_facilities', title: 'ℹ️ Hotel Facilities', description: 'WiFi, pool, spa, timings' },
+        { id: 'main_reception', title: '🛎️ Reception', description: 'Talk to front desk' },
+        { id: 'main_services', title: '✨ More Services', description: 'Valet, cleaning, checkout' },
       ],
     }],
     booking.id
@@ -808,34 +1067,69 @@ async function sendStayInfo(phone, booking) {
 async function startFoodFlow(phone, booking) {
   if (!booking) return whatsapp.sendText(phone, 'Food ordering requires an active stay.', null);
 
-  if (flowService.isFlowConfigured('food')) {
-    const ok = await openHotelFlow(
-      phone,
-      booking,
-      'food',
-      'Popular items checkboxes se select karein.\nFull category menu bhi chat se available hai.'
-    );
-    if (ok) return;
-  }
-
   const session = await guestService.getOrCreateSession(phone);
   const existing = guestService.parseSessionData(session);
   const cart = existing.cart || [];
-  await guestService.updateSession(phone, 'food_meal', { cart }, booking.id);
+  await guestService.updateSession(phone, 'food_home', { cart }, booking.id);
+
   return showMealTypes(phone, booking, { cart });
+}
+
+/** Open food Flow (CheckboxGroup + images), one page at a time. */
+async function openFoodMenuFlow(phone, booking, opts = {}, bodyExtra = '') {
+  if (!booking) return whatsapp.sendText(phone, 'Food ordering requires an active stay.', null);
+  if (!flowService.isFlowConfigured('food')) return false;
+
+  const session = await guestService.getOrCreateSession(phone);
+  const existing = guestService.parseSessionData(session);
+  const page = Math.max(0, parseInt(opts.page, 10) || 0);
+
+  const built = await buildFoodFlowScreenData(opts.orderItems || existing.cart || [], {
+    mealType: opts.mealType ?? existing.mealType,
+    categoryId: opts.categoryId ?? existing.categoryId,
+    page,
+  });
+
+  if (!built.products?.length || built.products[0]?.id === '0') {
+    return false;
+  }
+
+  await guestService.updateSession(phone, 'food_flow', {
+    cart: existing.cart || [],
+    foodPage: built.page,
+    foodHasMore: built.hasMore,
+    foodTotal: built.total,
+    mealType: opts.mealType ?? existing.mealType ?? null,
+    categoryId: opts.categoryId ?? existing.categoryId ?? null,
+  }, booking.id);
+
+  const pageLabel = built.total > FOOD_PAGE_SIZE
+    ? ` (page ${built.page + 1}/${Math.ceil(built.total / FOOD_PAGE_SIZE)})`
+    : '';
+
+  return openHotelFlow(
+    phone,
+    booking,
+    'food',
+    bodyExtra || `Select products with images${pageLabel}, then set quantity.`,
+    (() => {
+      const { page: _p, total: _t, hasMore: _h, ...screenData } = built;
+      return screenData;
+    })()
+  );
 }
 
 async function showMealTypes(phone, booking, sessionData = {}) {
   return whatsapp.sendList(
     phone,
-    '🍽️ Food / Dining\n\nMenu se select karein, ya seedha type karein\n(e.g. "2 cup chai aur 1 water bottle").',
+    'Food / Dining\n\nPick a menu, then order in the form (items + qty + total confirm).',
     'View Menu',
     [{
       title: 'Menu',
       rows: [
-        { id: 'meal_dinner', title: 'Dinner Menu', description: 'Starters, mains, drinks, desserts' },
-        { id: 'meal_breakfast', title: 'Breakfast', description: 'Morning favourites' },
-        { id: 'meal_snacks', title: 'Snacks', description: 'Quick bites anytime' },
+        { id: 'meal_dinner', title: '🌙 Dinner Menu', description: 'Order from dinner items' },
+        { id: 'meal_breakfast', title: '🌅 Breakfast', description: 'Order from breakfast items' },
+        { id: 'meal_snacks', title: '🍿 Snacks', description: 'Order from snacks' },
       ],
     }],
     booking.id
@@ -843,6 +1137,17 @@ async function showMealTypes(phone, booking, sessionData = {}) {
 }
 
 async function showCategories(phone, booking, mealType, sessionData = {}) {
+  const label = mealType.charAt(0).toUpperCase() + mealType.slice(1);
+
+  // Prefer food Flow for this meal (Dinner / Breakfast / Snacks) — page 0
+  const flowOk = await openFoodMenuFlow(
+    phone,
+    booking,
+    { mealType, page: 0, orderItems: sessionData.cart || [] },
+    `${label} menu — select products with images.`
+  );
+  if (flowOk) return;
+
   const categories = await menuRepo.getCategoriesByMealType(HOTEL_ID, mealType);
   if (!categories.length) {
     return whatsapp.sendText(phone, 'Is meal type ke liye menu available nahi hai.', booking.id);
@@ -853,17 +1158,16 @@ async function showCategories(phone, booking, mealType, sessionData = {}) {
     mealType,
   }, booking.id);
 
-  const label = mealType.charAt(0).toUpperCase() + mealType.slice(1);
   return whatsapp.sendList(
     phone,
-    `${label} Menu 🍴\n\nSelect a category:`,
+    `${label} Menu\n\nSelect a category:`,
     'Categories',
     [{
       title: 'Categories',
       rows: categories.map((c) => ({
         id: `cat_${c.id}`,
         title: c.name.slice(0, 24),
-        description: 'Tap to view items',
+        description: 'Tap to order items',
       })),
     }],
     booking.id
@@ -871,6 +1175,17 @@ async function showCategories(phone, booking, mealType, sessionData = {}) {
 }
 
 async function showItems(phone, booking, categoryId, sessionData = {}) {
+  // Prefer food-quick Flow for this category
+  const cats = await menuRepo.findAllCategories(HOTEL_ID);
+  const cat = cats.find((c) => Number(c.id) === Number(categoryId));
+  const flowOk = await openFoodMenuFlow(
+    phone,
+    booking,
+    { categoryId, page: 0, orderItems: sessionData.cart || [] },
+    cat ? `${cat.name} — select products with images.` : 'Select products with images.'
+  );
+  if (flowOk) return;
+
   const items = await menuRepo.getItemsByCategory(categoryId);
   if (!items.length) {
     return whatsapp.sendText(phone, 'Is category mein items available nahi hain.', booking.id);
@@ -882,9 +1197,9 @@ async function showItems(phone, booking, categoryId, sessionData = {}) {
     categoryId,
   }, booking.id);
 
-  let text = '📋 Menu Items\n\n';
+  let text = 'Menu Items\n\n';
   text += items.map((i) => `• ${i.name} — ₹${parseFloat(i.price).toFixed(0)}`).join('\n');
-  text += '\n\nList se choose karein, ya naam type karein (e.g. "2 Masala Chai").';
+  text += '\n\nList se item choose karein.';
 
   return whatsapp.sendList(
     phone,
@@ -1003,10 +1318,11 @@ async function confirmOrder(phone, booking, sessionData = {}) {
     `Estimated Delivery: 30 Minutes\n` +
     `👨‍🍳 Chef: ${STAFF.chef}\n` +
     `🧑‍🍳 Waiter: ${STAFF.waiter}\n\n` +
-    `Admin confirm se pehle aap Cancel / Edit kar sakte ho.`,
+    `Admin confirm se pehle aap Cancel kar sakte ho.`,
     [
       { id: 'guest_order_cancel', title: 'Cancel Order' },
-      { id: 'guest_order_edit', title: 'Edit Order' },
+      // TODO(tomorrow): re-enable Edit Order with Flow Data Endpoint
+      // { id: 'guest_order_edit', title: 'Edit Order' },
       { id: 'main_menu', title: 'Main Menu' },
     ],
     booking.id
@@ -1014,7 +1330,7 @@ async function confirmOrder(phone, booking, sessionData = {}) {
 }
 
 const ORDER_LOCKED_MSG =
-  '✅ Order confirm ho chuka hai admin/kitchen se.\nAb edit ya cancel nahi ho sakta.\nStatus ke liye "order status" likhein.';
+  '✅ Order confirm ho chuka hai admin/kitchen se.\nAb cancel nahi ho sakta.';
 
 async function getLatestModifiableOrder(bookingId) {
   const orders = await orderRepo.findAll({ booking_id: bookingId });
@@ -1055,12 +1371,19 @@ async function handleGuestOrderCancel(phone, booking) {
   );
 }
 
+// TODO(tomorrow): re-enable Edit Order with Flow Data Endpoint
 async function handleGuestOrderEdit(phone, booking) {
   if (!booking) return blockNonGuest(phone);
+  return whatsapp.sendText(
+    phone,
+    'Edit Order temporarily unavailable. Cancel the order and place a new one, or try again later.',
+    booking.id
+  );
+  /*
   const { order, locked } = await getLatestModifiableOrder(booking.id);
 
   if (!order) {
-    return whatsapp.sendText(phone, 'Koi active food order nahi mila edit karne ke liye.', booking.id);
+    return whatsapp.sendText(phone, 'No active food order found to edit.', booking.id);
   }
   if (locked) {
     return whatsapp.sendText(
@@ -1070,9 +1393,21 @@ async function handleGuestOrderEdit(phone, booking) {
     );
   }
 
-  // Cancel pending order and reload items into cart for re-order
   const full = await orderRepo.findById(order.id);
   await orderService.updateStatus(order.id, 'cancelled');
+
+  if (flowService.isFlowConfigured('food_edit') || flowService.isFlowConfigured('food')) {
+    const screenData = await buildFoodFlowScreenData(full.items || []);
+    const flowKey = flowService.isFlowConfigured('food_edit') ? 'food_edit' : 'food';
+    const ok = await openHotelFlow(
+      phone,
+      booking,
+      flowKey,
+      `Editing order #${order.order_ref}. Update quantities and submit.\nPrevious pending order was cancelled.`,
+      screenData
+    );
+    if (ok) return;
+  }
 
   const cart = (full.items || []).map((i) => ({
     menu_item_id: i.menu_item_id,
@@ -1085,9 +1420,10 @@ async function handleGuestOrderEdit(phone, booking) {
 
   return whatsapp.sendText(
     phone,
-    `✏️ Edit mode\nPehla order #${order.order_ref} hold/cancel kiya.\nItems cart mein hain — change karke dubara Place Order karein.`,
+    `Edit mode\nPrevious order #${order.order_ref} was cancelled.\nItems are in your cart — change and place again.`,
     booking.id
   ).then(() => showCart(phone, booking, { cart }));
+  */
 }
 
 async function cancelCart(phone, booking) {
@@ -1106,7 +1442,8 @@ async function sendLaundryMenu(phone, booking, sessionData = {}) {
       phone,
       booking,
       'laundry',
-      'Shirt ₹50 · Pant ₹70 · Suit ₹150\nCheckboxes se items select karein.'
+      'Select quantity per item. Shirt / Pant / Suit press.',
+      flowService.buildLaundryFlowScreenData()
     );
     if (ok) return;
   }
@@ -1331,12 +1668,28 @@ async function sendFacilitiesMenu(phone, booking) {
   if (!booking) return blockNonGuest(phone);
   const faqs = await faqRepo.findActive(HOTEL_ID);
   if (!faqs.length) {
-    return whatsapp.sendText(phone, 'Facilities info abhi available nahi hai. Reception se contact karein.', booking.id);
+    return whatsapp.sendText(phone, 'Facilities info is not available right now. Please contact reception.', booking.id);
+  }
+
+  if (flowService.isFlowConfigured('facilities')) {
+    const faq_options = faqs.slice(0, 10).map((f) => ({
+      id: String(f.id),
+      title: String(f.question || 'Info').slice(0, 30),
+      description: String(f.keywords || f.answer || '').slice(0, 72),
+    }));
+    const ok = await openHotelFlow(
+      phone,
+      booking,
+      'facilities',
+      'Select a topic for hotel facilities and info.',
+      { faq_options }
+    );
+    if (ok) return;
   }
 
   return whatsapp.sendList(
     phone,
-    '🏨 Hotel Facilities\n\nKya jaanna chahte ho?',
+    'Hotel Facilities\n\nWhat would you like to know?',
     'View Options',
     [{
       title: 'Facilities',
@@ -1389,12 +1742,12 @@ async function sendServicesMenu(phone, booking) {
     [{
       title: 'Services',
       rows: [
-        { id: 'svc_valet', title: 'Valet', description: 'Luggage or car retrieve' },
-        { id: 'svc_housekeeping', title: 'Housekeeping', description: 'Cleaning, towels, water' },
-        { id: 'svc_laundry', title: 'Laundry / Press', description: 'Clothes press' },
-        { id: 'svc_transport', title: 'Transport / Cab', description: 'Airport & local' },
-        { id: 'svc_maintenance', title: 'Maintenance', description: 'AC, TV, repairs' },
-        { id: 'svc_checkout', title: 'Checkout', description: 'Request checkout' },
+        { id: 'svc_valet', title: '🧳 Valet', description: 'Luggage or car retrieve' },
+        { id: 'svc_housekeeping', title: '🧹 Housekeeping', description: 'Cleaning, towels, water' },
+        { id: 'svc_laundry', title: '👔 Laundry / Press', description: 'Clothes press' },
+        { id: 'svc_transport', title: '🚕 Transport / Cab', description: 'Airport & local' },
+        { id: 'svc_maintenance', title: '🔧 Maintenance', description: 'AC, TV, repairs' },
+        { id: 'svc_checkout', title: '🧾 Checkout', description: 'Request checkout' },
       ],
     }],
     booking.id

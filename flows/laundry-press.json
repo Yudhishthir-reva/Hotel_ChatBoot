@@ -1,6 +1,5 @@
 {
   "version": "6.0",
-  "data_api_version": "3.0",
   "routing_model": {
     "LAUNDRY": []
   },
@@ -10,7 +9,32 @@
       "title": "Laundry / Press",
       "terminal": true,
       "success": true,
-      "data": {},
+      "data": {
+        "label_shirt": {
+          "type": "string",
+          "__example__": "Shirt Press \u00b7 \u20b950"
+        },
+        "init_shirt": {
+          "type": "string",
+          "__example__": "0"
+        },
+        "label_pant": {
+          "type": "string",
+          "__example__": "Pant Press \u00b7 \u20b970"
+        },
+        "init_pant": {
+          "type": "string",
+          "__example__": "0"
+        },
+        "label_suit": {
+          "type": "string",
+          "__example__": "Suit Press \u00b7 \u20b9150"
+        },
+        "init_suit": {
+          "type": "string",
+          "__example__": "0"
+        }
+      },
       "layout": {
         "type": "SingleColumnLayout",
         "children": [
@@ -20,49 +44,191 @@
           },
           {
             "type": "TextBody",
-            "text": "Select one or more items. Pickup in ~10 minutes from your room."
+            "text": "Select qty per item. Pickup in about 10 minutes from your room."
           },
           {
-            "type": "Form",
-            "name": "laundry_form",
-            "children": [
+            "type": "TextBody",
+            "text": "${data.label_shirt}"
+          },
+          {
+            "type": "Dropdown",
+            "name": "qty_shirt",
+            "label": "Select qty",
+            "required": false,
+            "init-value": "${data.init_shirt}",
+            "data-source": [
               {
-                "type": "CheckboxGroup",
-                "name": "items",
-                "label": "What do you want pressed?",
-                "required": true,
-                "min-selected-items": 1,
-                "max-selected-items": 5,
-                "data-source": [
-                  {
-                    "id": "shirt",
-                    "title": "Shirt Press",
-                    "description": "₹50 per piece"
-                  },
-                  {
-                    "id": "pant",
-                    "title": "Pant Press",
-                    "description": "₹70 per piece"
-                  },
-                  {
-                    "id": "suit",
-                    "title": "Suit Press",
-                    "description": "₹150 per piece"
-                  }
-                ]
+                "id": "0",
+                "title": "0 \u2014 Skip"
               },
               {
-                "type": "Footer",
-                "label": "Place Request",
-                "on-click-action": {
-                  "name": "complete",
-                  "payload": {
-                    "items": "${form.items}",
-                    "flow_name": "laundry_press"
-                  }
-                }
+                "id": "1",
+                "title": "Qty 1"
+              },
+              {
+                "id": "2",
+                "title": "Qty 2"
+              },
+              {
+                "id": "3",
+                "title": "Qty 3"
+              },
+              {
+                "id": "4",
+                "title": "Qty 4"
+              },
+              {
+                "id": "5",
+                "title": "Qty 5"
+              },
+              {
+                "id": "6",
+                "title": "Qty 6"
+              },
+              {
+                "id": "7",
+                "title": "Qty 7"
+              },
+              {
+                "id": "8",
+                "title": "Qty 8"
+              },
+              {
+                "id": "9",
+                "title": "Qty 9"
+              },
+              {
+                "id": "10",
+                "title": "Qty 10"
               }
             ]
+          },
+          {
+            "type": "TextBody",
+            "text": "${data.label_pant}"
+          },
+          {
+            "type": "Dropdown",
+            "name": "qty_pant",
+            "label": "Select qty",
+            "required": false,
+            "init-value": "${data.init_pant}",
+            "data-source": [
+              {
+                "id": "0",
+                "title": "0 \u2014 Skip"
+              },
+              {
+                "id": "1",
+                "title": "Qty 1"
+              },
+              {
+                "id": "2",
+                "title": "Qty 2"
+              },
+              {
+                "id": "3",
+                "title": "Qty 3"
+              },
+              {
+                "id": "4",
+                "title": "Qty 4"
+              },
+              {
+                "id": "5",
+                "title": "Qty 5"
+              },
+              {
+                "id": "6",
+                "title": "Qty 6"
+              },
+              {
+                "id": "7",
+                "title": "Qty 7"
+              },
+              {
+                "id": "8",
+                "title": "Qty 8"
+              },
+              {
+                "id": "9",
+                "title": "Qty 9"
+              },
+              {
+                "id": "10",
+                "title": "Qty 10"
+              }
+            ]
+          },
+          {
+            "type": "TextBody",
+            "text": "${data.label_suit}"
+          },
+          {
+            "type": "Dropdown",
+            "name": "qty_suit",
+            "label": "Select qty",
+            "required": false,
+            "init-value": "${data.init_suit}",
+            "data-source": [
+              {
+                "id": "0",
+                "title": "0 \u2014 Skip"
+              },
+              {
+                "id": "1",
+                "title": "Qty 1"
+              },
+              {
+                "id": "2",
+                "title": "Qty 2"
+              },
+              {
+                "id": "3",
+                "title": "Qty 3"
+              },
+              {
+                "id": "4",
+                "title": "Qty 4"
+              },
+              {
+                "id": "5",
+                "title": "Qty 5"
+              },
+              {
+                "id": "6",
+                "title": "Qty 6"
+              },
+              {
+                "id": "7",
+                "title": "Qty 7"
+              },
+              {
+                "id": "8",
+                "title": "Qty 8"
+              },
+              {
+                "id": "9",
+                "title": "Qty 9"
+              },
+              {
+                "id": "10",
+                "title": "Qty 10"
+              }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Place Request",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {
+                "flow_name": "laundry_press",
+                "qty_shirt": "${form.qty_shirt}",
+                "qty_pant": "${form.qty_pant}",
+                "qty_suit": "${form.qty_suit}"
+              }
+            }
           }
         ]
       }

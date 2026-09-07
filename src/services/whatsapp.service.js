@@ -31,9 +31,13 @@ async function sendRequest(payload) {
     });
     return response.data;
   } catch (err) {
-    const detail = err.response?.data?.error?.message || err.message;
+    const apiErr = err.response?.data?.error;
+    const detail = apiErr?.message || err.message;
+    const extra = apiErr?.error_data?.details || apiErr?.error_user_msg || null;
     console.error('[WhatsApp] Send failed:', detail, '| to:', payload.to);
-    throw new Error(detail);
+    if (extra) console.error('[WhatsApp] Details:', extra);
+    if (apiErr?.code) console.error('[WhatsApp] Code:', apiErr.code, '| fbtrace:', apiErr.fbtrace_id);
+    throw new Error(extra ? `${detail} — ${extra}` : detail);
   }
 }
 
@@ -137,6 +141,7 @@ async function sendFlow(to, options, bookingId) {
     footerText,
     screen = null,
     flowToken = null,
+    screenData = null,
   } = options;
 
   if (!flowId) throw new Error('flowId is required');
@@ -148,22 +153,23 @@ async function sendFlow(to, options, bookingId) {
 
   const parameters = {
     flow_message_version: '3',
+    flow_token: String(flowToken || `hotel_${Date.now()}`).slice(0, 200),
     flow_id: String(flowId),
-    flow_cta: flowCta.slice(0, 30),
-    flow_action: screen ? 'navigate' : 'navigate',
+    flow_cta: String(flowCta).slice(0, 30),
+    flow_action: 'navigate',
   };
 
-  if (flowToken) parameters.flow_token = String(flowToken);
+  // Navigate payload. Pass screen `data` only when non-empty (dynamic labels/prices).
   if (screen) {
-    parameters.flow_action_payload = {
-      screen,
-      data: {},
-    };
+    parameters.flow_action_payload = { screen: String(screen) };
+    if (screenData && typeof screenData === 'object' && Object.keys(screenData).length > 0) {
+      parameters.flow_action_payload.data = screenData;
+    }
   }
 
   const interactive = {
     type: 'flow',
-    body: { text: bodyText || 'Please fill the form' },
+    body: { text: (bodyText || 'Please fill the form').slice(0, 1024) },
     action: {
       name: 'flow',
       parameters,
@@ -171,11 +177,19 @@ async function sendFlow(to, options, bookingId) {
   };
 
   if (headerText) {
-    interactive.header = { type: 'text', text: headerText.slice(0, 60) };
+    interactive.header = { type: 'text', text: String(headerText).slice(0, 60) };
   }
   if (footerText) {
-    interactive.footer = { text: footerText.slice(0, 60) };
+    interactive.footer = { text: String(footerText).slice(0, 60) };
   }
+
+  console.log('[WhatsApp] Sending flow:', {
+    flowId: parameters.flow_id,
+    screen: screen || null,
+    cta: parameters.flow_cta,
+    screenData,
+    to,
+  });
 
   return sendRequest({
     messaging_product: 'whatsapp',

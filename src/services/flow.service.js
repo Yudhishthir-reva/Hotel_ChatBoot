@@ -76,9 +76,23 @@ const FLOW_CONFIG = {
   food: {
     env: 'WHATSAPP_FOOD_FLOW_ID',
     screen: 'FOOD',
-    cta: 'Quick Order',
+    cta: 'Order Food',
     header: 'Food / Dining',
     file: 'flows/food-quick.json',
+  },
+  food_edit: {
+    env: 'WHATSAPP_FOOD_EDIT_FLOW_ID',
+    screen: 'FOOD',
+    cta: 'Edit Order',
+    header: 'Edit Order',
+    file: 'flows/food-edit.json',
+  },
+  facilities: {
+    env: 'WHATSAPP_FACILITIES_FLOW_ID',
+    screen: 'FACILITIES',
+    cta: 'View Info',
+    header: 'Hotel Facilities',
+    file: 'flows/facilities.json',
   },
 };
 
@@ -145,6 +159,34 @@ function labelDestination(dest) {
   return map[dest] || dest || 'Cab';
 }
 
+function buildLaundryCartFromQtyPayload(raw = {}) {
+  const cart = [];
+  for (const [key, item] of Object.entries(LAUNDRY_CATALOG)) {
+    const qty = Math.min(10, Math.max(0, parseInt(raw[`qty_${key}`], 10) || 0));
+    if (qty < 1) continue;
+    cart.push({ key, name: item.name, quantity: qty, price: item.price });
+  }
+  return cart;
+}
+
+function buildLaundryFlowScreenData() {
+  const data = {};
+  for (const [key, item] of Object.entries(LAUNDRY_CATALOG)) {
+    data[`label_${key}`] = `${item.name} · ₹${item.price}`;
+    data[`init_${key}`] = '0';
+  }
+  return data;
+}
+
+/** Map order line names → food flow qty keys for edit prefill. */
+function foodQtyKeyFromItemName(name) {
+  const n = String(name || '').toLowerCase().trim();
+  for (const [key, wantName] of Object.entries(FOOD_FLOW_ITEMS)) {
+    if (wantName.toLowerCase() === n) return key;
+  }
+  return null;
+}
+
 module.exports = {
   LAUNDRY_CATALOG,
   FOOD_FLOW_ITEMS,
@@ -155,6 +197,9 @@ module.exports = {
   getFlowMeta,
   parseFlowResponse,
   buildLaundryCartFromFlowItems,
+  buildLaundryCartFromQtyPayload,
+  buildLaundryFlowScreenData,
+  foodQtyKeyFromItemName,
   labelHousekeepingItems,
   labelValet,
   labelDestination,

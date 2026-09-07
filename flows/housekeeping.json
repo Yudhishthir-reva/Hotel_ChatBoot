@@ -1,7 +1,8 @@
 {
   "version": "6.0",
-  "data_api_version": "3.0",
-  "routing_model": { "HOUSEKEEPING": [] },
+  "routing_model": {
+    "HOUSEKEEPING": []
+  },
   "screens": [
     {
       "id": "HOUSEKEEPING",
@@ -12,8 +13,14 @@
       "layout": {
         "type": "SingleColumnLayout",
         "children": [
-          { "type": "TextHeading", "text": "Housekeeping" },
-          { "type": "TextBody", "text": "Select what you need. Staff will come to your room." },
+          {
+            "type": "TextHeading",
+            "text": "Housekeeping"
+          },
+          {
+            "type": "TextBody",
+            "text": "Select what you need. Staff will come to your room."
+          },
           {
             "type": "Form",
             "name": "hk_form",
@@ -26,12 +33,30 @@
                 "min-selected-items": 1,
                 "max-selected-items": 6,
                 "data-source": [
-                  { "id": "room_cleaning", "title": "Room Cleaning" },
-                  { "id": "extra_towel", "title": "Extra Towel" },
-                  { "id": "toiletries", "title": "Toiletries" },
-                  { "id": "water", "title": "Drinking Water" },
-                  { "id": "bed_make", "title": "Make Bed" },
-                  { "id": "other", "title": "Other" }
+                  {
+                    "id": "room_cleaning",
+                    "title": "Room Cleaning"
+                  },
+                  {
+                    "id": "extra_towel",
+                    "title": "Extra Towel"
+                  },
+                  {
+                    "id": "toiletries",
+                    "title": "Toiletries"
+                  },
+                  {
+                    "id": "water",
+                    "title": "Drinking Water"
+                  },
+                  {
+                    "id": "bed_make",
+                    "title": "Make Bed"
+                  },
+                  {
+                    "id": "other",
+                    "title": "Other"
+                  }
                 ]
               },
               {

@@ -9,7 +9,7 @@
   "screens": [
     {
       "id": "FOOD",
-      "title": "Order Food",
+      "title": "Edit Order",
       "data": {
         "products": {
           "type": "array",
@@ -493,7 +493,7 @@
             "children": [
               {
                 "type": "TextHeading",
-                "text": "Select Your Products"
+                "text": "Edit Products"
               },
               {
                 "type": "TextBody",
@@ -579,7 +579,7 @@
     },
     {
       "id": "FOOD_QTY",
-      "title": "Quantity",
+      "title": "Edit Quantity",
       "terminal": true,
       "success": true,
       "data": {
@@ -1131,12 +1131,12 @@
               },
               {
                 "type": "Footer",
-                "label": "Review Order",
+                "label": "Review Updated Order",
                 "on-click-action": {
                   "name": "complete",
                   "payload": {
                     "products": "${data.products}",
-                    "flow_name": "food",
+                    "flow_name": "food_edit",
                     "key_0": "${data.key_0}",
                     "qty_0": "${form.qty_0}",
                     "key_1": "${data.key_1}",

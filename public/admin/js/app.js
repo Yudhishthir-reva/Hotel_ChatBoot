@@ -438,6 +438,21 @@ window.sendChatMessage = async () => {
   selectChat(selectedChatPhone);
 };
 
+function menuItemThumb(url, name) {
+  if (!url) {
+    return '<span class="menu-thumb menu-thumb-empty" aria-hidden="true">🍽</span>';
+  }
+  return `<img class="menu-thumb" src="${escapeHtml(url)}" alt="${escapeHtml(name || 'Item')}" loading="lazy" onerror="this.outerHTML='<span class=&quot;menu-thumb menu-thumb-empty&quot;>—</span>'">`;
+}
+
+function menuImagePreviewHtml(url) {
+  const src = (url || '').trim();
+  if (!src) {
+    return '<div class="menu-preview menu-preview-empty">No image</div>';
+  }
+  return `<img class="menu-preview" src="${escapeHtml(src)}" alt="Preview" onerror="this.outerHTML='<div class=&quot;menu-preview menu-preview-empty&quot;>Image failed to load</div>'">`;
+}
+
 async function renderMenu(el) {
   const { categories, items } = await api('/menu');
   window._menuCategories = categories;
@@ -448,14 +463,18 @@ async function renderMenu(el) {
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Item</th><th>Category</th><th>Meal</th><th>Price</th><th>Image</th><th>Available</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Item</th><th>Category</th><th>Meal</th><th>Price</th><th>Available</th><th>Actions</th></tr></thead>
         <tbody>${items.map((i) => `
           <tr>
-            <td>${i.name}</td>
-            <td>${i.category_name}</td>
-            <td>${i.meal_type}</td>
+            <td>
+              <div class="menu-item-cell">
+                ${menuItemThumb(i.image_url, i.name)}
+                <span>${escapeHtml(i.name)}</span>
+              </div>
+            </td>
+            <td>${escapeHtml(i.category_name)}</td>
+            <td>${escapeHtml(i.meal_type)}</td>
             <td>₹${parseFloat(i.price).toFixed(0)}</td>
-            <td>${i.image_url ? '🖼' : '—'}</td>
             <td>${i.is_available ? '✅' : '❌'}</td>
             <td class="actions">
               <button class="btn btn-sm btn-primary" onclick="showEditItemModal(${i.id})">Edit</button>
@@ -472,20 +491,34 @@ window.toggleItemAvailability = async (id, val) => {
   loadPage('menu');
 };
 
+function wireMenuImagePreview() {
+  const input = document.getElementById('mi_image');
+  const preview = document.getElementById('mi_preview');
+  if (!input || !preview) return;
+  const update = () => {
+    preview.innerHTML = menuImagePreviewHtml(input.value);
+  };
+  input.addEventListener('input', update);
+  input.addEventListener('change', update);
+  update();
+}
+
 window.showNewItemModal = () => {
   const cats = window._menuCategories || [];
   showModal(`
     <h3>Add Menu Item</h3>
     <div class="form-group"><label>Name</label><input id="mi_name"></div>
     <div class="form-group"><label>Category</label>
-      <select id="mi_cat">${cats.map((c) => `<option value="${c.id}">${c.name} (${c.meal_type})</option>`).join('')}</select>
+      <select id="mi_cat">${cats.map((c) => `<option value="${c.id}">${escapeHtml(c.name)} (${escapeHtml(c.meal_type)})</option>`).join('')}</select>
     </div>
     <div class="form-group"><label>Price (₹)</label><input type="number" id="mi_price"></div>
     <div class="form-group"><label>Image URL (optional)</label><input id="mi_image" placeholder="https://..."></div>
+    <div id="mi_preview" class="menu-preview-wrap"></div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="hideModal()">Cancel</button>
       <button class="btn btn-primary" onclick="createMenuItem()">Add</button>
     </div>`);
+  wireMenuImagePreview();
 };
 
 window.showEditItemModal = (id) => {
@@ -497,11 +530,12 @@ window.showEditItemModal = (id) => {
     <div class="form-group"><label>Name</label><input id="mi_name" value="${escapeHtml(item.name)}"></div>
     <div class="form-group"><label>Category</label>
       <select id="mi_cat">${cats.map((c) =>
-        `<option value="${c.id}" ${c.id === item.category_id ? 'selected' : ''}>${c.name} (${c.meal_type})</option>`
+        `<option value="${c.id}" ${c.id === item.category_id ? 'selected' : ''}>${escapeHtml(c.name)} (${escapeHtml(c.meal_type)})</option>`
       ).join('')}</select>
     </div>
     <div class="form-group"><label>Price (₹)</label><input type="number" id="mi_price" value="${parseFloat(item.price)}"></div>
     <div class="form-group"><label>Image URL</label><input id="mi_image" value="${escapeHtml(item.image_url || '')}" placeholder="https://..."></div>
+    <div id="mi_preview" class="menu-preview-wrap"></div>
     <div class="form-group"><label>Available</label>
       <select id="mi_available">
         <option value="1" ${item.is_available ? 'selected' : ''}>Yes</option>
@@ -512,6 +546,7 @@ window.showEditItemModal = (id) => {
       <button class="btn btn-ghost" onclick="hideModal()">Cancel</button>
       <button class="btn btn-primary" onclick="saveMenuItem(${id})">Save</button>
     </div>`);
+  wireMenuImagePreview();
 };
 
 window.createMenuItem = async () => {

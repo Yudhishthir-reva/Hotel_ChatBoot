@@ -1,7 +1,8 @@
 {
   "version": "6.0",
-  "data_api_version": "3.0",
-  "routing_model": { "MAINTENANCE": [] },
+  "routing_model": {
+    "MAINTENANCE": []
+  },
   "screens": [
     {
       "id": "MAINTENANCE",
@@ -12,8 +13,14 @@
       "layout": {
         "type": "SingleColumnLayout",
         "children": [
-          { "type": "TextHeading", "text": "Report an Issue" },
-          { "type": "TextBody", "text": "Describe the problem. Technician will be assigned." },
+          {
+            "type": "TextHeading",
+            "text": "Report an Issue"
+          },
+          {
+            "type": "TextBody",
+            "text": "Describe the problem. Technician will be assigned."
+          },
           {
             "type": "Form",
             "name": "maint_form",
@@ -24,11 +31,26 @@
                 "label": "Issue type",
                 "required": true,
                 "data-source": [
-                  { "id": "ac", "title": "AC not working" },
-                  { "id": "tv", "title": "TV / WiFi" },
-                  { "id": "plumbing", "title": "Plumbing" },
-                  { "id": "electrical", "title": "Electrical" },
-                  { "id": "other", "title": "Other" }
+                  {
+                    "id": "ac",
+                    "title": "AC not working"
+                  },
+                  {
+                    "id": "tv",
+                    "title": "TV / WiFi"
+                  },
+                  {
+                    "id": "plumbing",
+                    "title": "Plumbing"
+                  },
+                  {
+                    "id": "electrical",
+                    "title": "Electrical"
+                  },
+                  {
+                    "id": "other",
+                    "title": "Other"
+                  }
                 ]
               },
               {
@@ -37,9 +59,18 @@
                 "label": "Priority",
                 "required": true,
                 "data-source": [
-                  { "id": "high", "title": "High" },
-                  { "id": "medium", "title": "Medium" },
-                  { "id": "low", "title": "Low" }
+                  {
+                    "id": "high",
+                    "title": "High"
+                  },
+                  {
+                    "id": "medium",
+                    "title": "Medium"
+                  },
+                  {
+                    "id": "low",
+                    "title": "Low"
+                  }
                 ]
               },
               {

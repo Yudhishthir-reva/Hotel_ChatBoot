@@ -427,6 +427,59 @@ tr:hover td { background: rgba(255,255,255,0.025); }
 
 td strong { font-weight: 600; }
 
+.menu-item-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 180px;
+}
+
+.menu-thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+  display: block;
+}
+
+.menu-thumb-empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
+  color: var(--muted);
+  background: var(--surface2);
+}
+
+.menu-preview-wrap {
+  margin: -4px 0 8px;
+}
+
+.menu-preview {
+  width: 100%;
+  max-height: 160px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  display: block;
+}
+
+.menu-preview-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 72px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+}
+
 /* ─── Badge ─────────────────────────────────────────────── */
 .badge {
   display: inline-block;

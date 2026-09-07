@@ -1,7 +1,8 @@
 {
   "version": "6.0",
-  "data_api_version": "3.0",
-  "routing_model": { "TRANSPORT": [] },
+  "routing_model": {
+    "TRANSPORT": []
+  },
   "screens": [
     {
       "id": "TRANSPORT",
@@ -12,8 +13,14 @@
       "layout": {
         "type": "SingleColumnLayout",
         "children": [
-          { "type": "TextHeading", "text": "Book a Cab" },
-          { "type": "TextBody", "text": "Select destination. Reception will confirm." },
+          {
+            "type": "TextHeading",
+            "text": "Book a Cab"
+          },
+          {
+            "type": "TextBody",
+            "text": "Select destination. Reception will confirm."
+          },
           {
             "type": "Form",
             "name": "cab_form",
@@ -24,10 +31,22 @@
                 "label": "Where do you want to go?",
                 "required": true,
                 "data-source": [
-                  { "id": "airport", "title": "Airport Transfer" },
-                  { "id": "station", "title": "Railway Station" },
-                  { "id": "local", "title": "Local Cab" },
-                  { "id": "other", "title": "Other Location" }
+                  {
+                    "id": "airport",
+                    "title": "Airport Transfer"
+                  },
+                  {
+                    "id": "station",
+                    "title": "Railway Station"
+                  },
+                  {
+                    "id": "local",
+                    "title": "Local Cab"
+                  },
+                  {
+                    "id": "other",
+                    "title": "Other Location"
+                  }
                 ]
               },
               {

@@ -1,7 +1,8 @@
 {
   "version": "6.0",
-  "data_api_version": "3.0",
-  "routing_model": { "CHECKOUT": [] },
+  "routing_model": {
+    "CHECKOUT": []
+  },
   "screens": [
     {
       "id": "CHECKOUT",
@@ -12,8 +13,14 @@
       "layout": {
         "type": "SingleColumnLayout",
         "children": [
-          { "type": "TextHeading", "text": "Checkout Request" },
-          { "type": "TextBody", "text": "Front desk will process your request." },
+          {
+            "type": "TextHeading",
+            "text": "Checkout Request"
+          },
+          {
+            "type": "TextBody",
+            "text": "Front desk will process your request."
+          },
           {
             "type": "Form",
             "name": "co_form",
@@ -24,8 +31,14 @@
                 "label": "Checkout type",
                 "required": true,
                 "data-source": [
-                  { "id": "normal", "title": "Standard checkout" },
-                  { "id": "late", "title": "Late checkout (approval needed)" }
+                  {
+                    "id": "normal",
+                    "title": "Standard checkout"
+                  },
+                  {
+                    "id": "late",
+                    "title": "Late checkout (approval needed)"
+                  }
                 ]
               },
               {
